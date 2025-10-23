@@ -2,177 +2,259 @@ import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../models/marker.dart';
 import '../models/vtt_scene.dart';
-import '../services/auth_service.dart';
+import 'auth_service.dart'; // Import AuthService to get the token
 
 class VttSocketService with ChangeNotifier {
-  // HTTP 기본값은 그대로 두되, VTT WebSocket은 별도 환경 변수로 분리
-  static const String _httpBase =
-      String.fromEnvironment('BACKEND_BASE_URL', defaultValue: 'http://localhost:11122');
-  static const String _wsUrl =
-      String.fromEnvironment('VTT_WS_URL', defaultValue: 'http://localhost:11123/vtt');
-
+  static const String _baseUrl = 'http://localhost:11122'; // Ensure this matches your backend URL
   final String roomId;
   IO.Socket? _socket;
+  bool _isConnected = false; // Track connection status
 
   VttScene? _scene;
   VttScene? get scene => _scene;
 
   final Map<int, Marker> _markers = {};
-  Map<int, Marker> get markers => _markers;
+  // Use a getter that returns an unmodifiable map or a copy to prevent external modification
+  Map<int, Marker> get markers => Map.unmodifiable(_markers);
+
+  bool get isConnected => _isConnected;
 
   VttSocketService(this.roomId);
 
-  void _joinAndSync() {
-    // 방 참여 및 초기 상태 재요청 (재연결 포함 공통 루틴)
-    _socket!.emit('joinRoom', {'roomId': roomId});
-    _socket!.emit('requestInitialState', {'roomId': roomId});
-  }
-
-  /// 현재 씬의 gridSize를 안전하게 가져오기 (없으면 0.0)
-  double get gridSize {
-    final g = (scene == null) ? null : (scene as dynamic).gridSize;
-    if (g is num) return g.toDouble();
-    return 0.0;
-  }
-
-  /// 현재 씬의 showGrid를 안전하게 가져오기 (없으면 false)
-  bool get showGrid {
-    final sg = (scene == null) ? null : (scene as dynamic).showGrid;
-    if (sg is bool) return sg;
-    return false;
-  }
-
-  /// 소켓 연결: JWT 헤더 포함 + 초기 상태 요청
-  void connect() async {
-    final token = await AuthService.getToken();
-
-    _socket = IO.io(
-      _wsUrl,
-      IO.OptionBuilder()
-          .setTransports(['websocket'])
-          .enableReconnection()
-          .setReconnectionAttempts(0)
-          .setReconnectionDelay(500)
-          .enableForceNew()
-          .setQuery({'roomId': roomId})
-          .setExtraHeaders({
-            if (token != null) 'Authorization': 'Bearer $token',
-            // 백엔드에서 사용할 수 있도록 방 정보를 헤더로도 전달
-            'X-TRPG-Room': roomId,
-          })
-          .disableAutoConnect()
-          .build(),
-    );
-
-    _socket!.onConnect((_) {
-      debugPrint('VTT 소켓 연결 성공');
-      _joinAndSync();
-    });
-
-    _socket!.on('reconnect', (_) {
-      debugPrint('VTT 소켓 재연결');
-      _joinAndSync();
-    });
-
-    _socket!.on('initialState', (data) {
-      if (data is Map && data['scene'] != null) {
-        _scene = VttScene.fromJson(data['scene']);
-      }
-      if (data is Map && data['markers'] != null) {
-        _markers.clear();
-        for (var markerData in data['markers']) {
-          final marker = Marker.fromJson(markerData);
-          _markers[marker.id] = marker;
-        }
-      }
-      notifyListeners();
-    });
-
-    _socket!.on('sceneUpdated', (data) {
-      _scene = VttScene.fromJson(data);
-      notifyListeners();
-    });
-
-    _socket!.on('markerCreated', (data) {
-      final marker = Marker.fromJson(data);
-      _markers[marker.id] = marker;
-      notifyListeners();
-    });
-
-    _socket!.on('markerMoved', (data) {
-      final marker = Marker.fromJson(data);
-      _markers[marker.id] = marker;
-      notifyListeners();
-    });
-
-    _socket!.on('markerDeleted', (data) {
-      final id = data is Map ? data['markerId'] : null;
-      if (id != null) {
-        _markers.remove(id);
-        notifyListeners();
-      }
-    });
-
-    _socket!.onDisconnect((_) => debugPrint('VTT 소켓 연결 끊김'));
-    _socket!.onError((data) => debugPrint('VTT 소켓 오류: $data'));
-
-    _socket!.connect();
-  }
-
-  /// 씬 메타 업데이트: gridSize / showGrid 등을 서버에 전달
-  void updateSceneMeta({double? gridSize, bool? showGrid}) {
-    if (_scene == null) return;
-    final payload = {
-      'id': (scene as dynamic).id,
-      if (gridSize != null) 'gridSize': gridSize,
-      if (showGrid != null) 'showGrid': showGrid,
-      'roomId': roomId,
-    };
-    _socket?.emit('updateScene', payload);
-  }
-
-  /// gridSize 설정 (로컬 상태는 서버 브로드캐스트(sceneUpdated)로 동기화)
-  void setGridSize(double size) {
-    updateSceneMeta(gridSize: size);
-  }
-
-  /// showGrid 토글
-  void setShowGrid(bool show) {
-    updateSceneMeta(showGrid: show);
-  }
-
-  /// 마커 생성
-  void createMarker(Marker marker) {
-    final payload = marker.toJson()..addAll({'roomId': roomId});
-    _socket?.emit('createMarker', payload);
-  }
-
-  /// 마커 이동 (그리드 스냅 고려)
-  void moveMarker(int markerId, double x, double y, {bool snapToGrid = true}) {
-    double nx = x, ny = y;
-
-    if (snapToGrid) {
-      final gs = gridSize;
-      if (gs > 0) {
-        nx = (nx / gs).roundToDouble() * gs;
-        ny = (ny / gs).roundToDouble() * gs;
-      }
+  // --- Connection ---
+  Future<void> connect() async {
+    // Prevent multiple connection attempts if already connected or connecting
+    if (_socket != null && _socket!.connected) {
+      debugPrint('VTT 소켓이 이미 연결 중이거나 연결되었습니다.');
+      return;
     }
 
-    _socket?.emit('moveMarker', {'markerId': markerId, 'x': nx, 'y': ny, 'roomId': roomId});
-    // 낙관적 업데이트는 서버 이벤트에 맞춰 처리(지연/권한 문제 방지)
+    final token = await AuthService.getToken();
+    if (token == null) {
+      debugPrint('VTT 소켓: 인증 토큰이 없어 연결할 수 없습니다.');
+      // Optionally notify listeners about the connection failure state
+      _isConnected = false;
+      notifyListeners();
+      return;
+    }
+
+    debugPrint('VTT 소켓 연결 시도 중... Room ID: $roomId');
+
+    try {
+      _socket = IO.io(
+        '$_baseUrl/vtt', // VTT namespace
+        IO.OptionBuilder()
+            .setTransports(['websocket']) // Use WebSocket transport
+            .setQuery({'roomId': roomId}) // Pass roomId as query parameter
+            .disableAutoConnect() // Connect manually
+            .setAuth({'token': token}) // Send auth token
+             // Optional: Add reconnection attempts
+            .setReconnectionAttempts(3)
+            .setReconnectionDelay(1000) // 1 second
+            .build(),
+      );
+
+      // --- Socket Event Listeners ---
+      _socket!.onConnect((_) {
+        debugPrint('VTT 소켓 연결 성공. ID: ${_socket?.id}');
+        _isConnected = true;
+        _socket!.emit('requestInitialState'); // Request initial data upon connection
+        notifyListeners(); // Notify listeners about connection status change
+      });
+
+      _socket!.on('initialState', _handleInitialState);
+      _socket!.on('sceneUpdated', _handleSceneUpdated);
+      _socket!.on('markerCreated', _handleMarkerCreated);
+      _socket!.on('markerMoved', _handleMarkerMoved);
+      _socket!.on('markerDeleted', _handleMarkerDeleted);
+
+      _socket!.onDisconnect((reason) {
+        debugPrint('VTT 소켓 연결 끊김. 이유: $reason');
+        _isConnected = false;
+        _clearState(); // Clear data on disconnect
+        notifyListeners();
+      });
+
+      _socket!.onConnectError((data) {
+        debugPrint('VTT 소켓 연결 오류: $data');
+        _isConnected = false;
+        _clearState();
+        notifyListeners();
+      });
+
+      _socket!.onError((data) {
+        debugPrint('VTT 소켓 오류 발생: $data');
+        // Consider more specific error handling based on 'data'
+      });
+
+      // Attempt to connect
+      _socket!.connect();
+
+    } catch (e) {
+       debugPrint('VTT 소켓 생성/연결 중 예외 발생: $e');
+       _isConnected = false;
+       notifyListeners();
+    }
   }
 
-  /// 마커 삭제
-  void deleteMarker(int markerId) {
-    _socket?.emit('deleteMarker', {'markerId': markerId, 'roomId': roomId});
+  // --- Event Handlers ---
+  void _handleInitialState(dynamic data) {
+    if (data is! Map<String, dynamic>) {
+       debugPrint('VTT initialState: 잘못된 데이터 형식 수신');
+       return;
+    }
+    debugPrint('VTT initialState 수신: $data');
+    try {
+      if (data['scene'] != null) {
+        _scene = VttScene.fromJson(data['scene'] as Map<String, dynamic>);
+      } else {
+        _scene = null; // Ensure scene is nulled if not provided
+      }
+      _markers.clear(); // Clear existing markers before adding new ones
+      if (data['markers'] != null && data['markers'] is List) {
+        for (var markerData in (data['markers'] as List)) {
+           if (markerData is Map<String, dynamic>) {
+              final marker = Marker.fromJson(markerData);
+              _markers[marker.id] = marker;
+           } else {
+               debugPrint('VTT initialState: 잘못된 마커 데이터 형식 수신: $markerData');
+           }
+        }
+      }
+      notifyListeners(); // Update UI
+    } catch (e) {
+        debugPrint('VTT initialState 처리 중 오류: $e');
+        _clearState(); // Clear state on error to prevent inconsistent data
+        notifyListeners();
+    }
   }
+
+ void _handleSceneUpdated(dynamic data) {
+    if (data is! Map<String, dynamic>) {
+       debugPrint('VTT sceneUpdated: 잘못된 데이터 형식 수신');
+       return;
+    }
+    debugPrint('VTT sceneUpdated 수신: $data');
+    try {
+      _scene = VttScene.fromJson(data);
+      notifyListeners();
+    } catch (e) {
+        debugPrint('VTT sceneUpdated 처리 중 오류: $e');
+        // Decide if state should be cleared or just log the error
+    }
+ }
+
+ void _handleMarkerCreated(dynamic data) {
+     if (data is! Map<String, dynamic>) {
+        debugPrint('VTT markerCreated: 잘못된 데이터 형식 수신');
+        return;
+     }
+     debugPrint('VTT markerCreated 수신: $data');
+     try {
+       final marker = Marker.fromJson(data);
+       _markers[marker.id] = marker; // Add or update the marker
+       notifyListeners();
+     } catch (e) {
+         debugPrint('VTT markerCreated 처리 중 오류: $e');
+     }
+ }
+
+ void _handleMarkerMoved(dynamic data) {
+     if (data is! Map<String, dynamic>) {
+        debugPrint('VTT markerMoved: 잘못된 데이터 형식 수신');
+        return;
+     }
+     debugPrint('VTT markerMoved 수신: $data');
+     try {
+         // Attempt to parse the marker data
+         final marker = Marker.fromJson(data);
+         // Update the marker in the map only if it exists
+         if (_markers.containsKey(marker.id)) {
+            _markers[marker.id] = marker;
+            notifyListeners();
+         } else {
+             // Log if trying to move a marker that doesn't exist locally
+             debugPrint('VTT markerMoved: 로컬에 존재하지 않는 마커 이동 시도 (ID: ${marker.id})');
+             // Optional: Request initial state again if consistency is critical
+             // _socket?.emit('requestInitialState');
+         }
+     } catch (e) {
+         debugPrint('VTT markerMoved 처리 중 오류: $e');
+     }
+ }
+
+
+  void _handleMarkerDeleted(dynamic data) {
+      if (data is! Map<String, dynamic> || data['markerId'] == null) {
+          debugPrint('VTT markerDeleted: 잘못된 데이터 형식 수신');
+          return;
+      }
+      debugPrint('VTT markerDeleted 수신: $data');
+      try {
+        // Ensure markerId is correctly parsed (might be int or String from backend)
+        final id = int.tryParse(data['markerId'].toString());
+        if (id != null) {
+          if (_markers.remove(id) != null) { // Remove marker if it exists
+             notifyListeners();
+          } else {
+             debugPrint('VTT markerDeleted: 로컬에 존재하지 않는 마커 삭제 시도 (ID: $id)');
+          }
+        } else {
+           debugPrint('VTT markerDeleted: 유효하지 않은 markerId 수신: ${data['markerId']}');
+        }
+      } catch (e) {
+          debugPrint('VTT markerDeleted 처리 중 오류: $e');
+      }
+  }
+
+
+  // --- Actions (Emit Events) ---
+  void updateScene(VttScene scene) {
+    if (!_isConnected || _socket == null) {
+        debugPrint('VTT: 소켓이 연결되지 않아 씬을 업데이트할 수 없습니다.');
+        return;
+    }
+    _socket!.emit('updateScene', scene.toJson());
+  }
+
+  void createMarker(Marker marker) {
+     if (!_isConnected || _socket == null) {
+        debugPrint('VTT: 소켓이 연결되지 않아 마커를 생성할 수 없습니다.');
+        return;
+    }
+    _socket!.emit('createMarker', marker.toJson());
+  }
+
+  void moveMarker(int markerId, double x, double y) {
+     if (!_isConnected || _socket == null) {
+        debugPrint('VTT: 소켓이 연결되지 않아 마커를 이동할 수 없습니다.');
+        return;
+     }
+    _socket!.emit('moveMarker', {'markerId': markerId, 'x': x, 'y': y});
+  }
+
+  void deleteMarker(int markerId) {
+     if (!_isConnected || _socket == null) {
+        debugPrint('VTT: 소켓이 연결되지 않아 마커를 삭제할 수 없습니다.');
+        return;
+     }
+    _socket!.emit('deleteMarker', {'markerId': markerId});
+  }
+
+  // --- Cleanup ---
+   void _clearState() {
+     _scene = null;
+     _markers.clear();
+     // Keep _isConnected updated by connect/disconnect handlers
+   }
+
 
   @override
   void dispose() {
-    try {
-      _socket?.dispose();
-    } catch (_) {}
-    super.dispose();
+    debugPrint('VTT 소켓 서비스 정리 중...');
+    _socket?.dispose(); // Dispose the socket connection
+    _socket = null;
+    _isConnected = false;
+    super.dispose(); // Call ChangeNotifier's dispose
   }
 }

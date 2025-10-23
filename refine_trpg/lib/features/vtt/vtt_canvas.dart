@@ -1,14 +1,11 @@
-import 'dart:math' as math;
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../../models/marker.dart';
 import '../../services/vtt_socket_service.dart';
+import '../../models/vtt_scene.dart'; // Import VttScene
 
-/// VTT 캔버스 (줌/패닝 + 그리드 + 마커 드래그)
-/// - 소켓 기반 상태(VttSocketService)는 유지
-/// - 이동 델타는 현재 줌 배율을 고려해 서버로 전송 (dx/scale, dy/scale)
-/// - 배경/그리드/마커 모두 InteractiveViewer 안에서 스케일/패닝
 class VttCanvas extends StatefulWidget {
   const VttCanvas({super.key});
 
@@ -17,234 +14,198 @@ class VttCanvas extends StatefulWidget {
 }
 
 class _VttCanvasState extends State<VttCanvas> {
-  final TransformationController _t = TransformationController();
-  int? _selectedMarkerId;
+  // Controller to manage transformations (zoom/pan) programmatically if needed.
+  final TransformationController _transformationController = TransformationController();
 
-  double get _scale {
-    final m = _t.value;
-    // 대각 성분에서 스케일 근사
-    return (m.row0[0].abs() + m.row1[1].abs()) / 2.0;
+  @override
+  void dispose() {
+    _transformationController.dispose();
+    super.dispose();
   }
-
-  void _resetView() {
-    _t.value = Matrix4.identity();
-    setState(() {});
-  }
-
-  static const double _minScale = 0.5;
-  static const double _maxScale = 3.5;
-
-  void _zoomBy(double delta) {
-    final current = _scale <= 0.001 ? 1.0 : _scale;
-    final target = (current + delta).clamp(_minScale, _maxScale);
-    final ratio = target / current;
-    setState(() {
-      final m = Matrix4.copy(_t.value);
-      m.scale(ratio, ratio, 1);
-      _t.value = m;
-    });
-  }
-
-  void _zoomIn() => _zoomBy(0.25);
-  void _zoomOut() => _zoomBy(-0.25);
 
   @override
   Widget build(BuildContext context) {
-    final vtt = Provider.of<VttSocketService>(context);
-    final scene = vtt.scene;
+    // Watch for changes in VttSocketService
+    final vtt = context.watch<VttSocketService>();
+    final VttScene? scene = vtt.scene; // Make scene nullable
+    // Use markers directly from the provider
     final markers = vtt.markers.values.toList();
 
     if (scene == null) {
       return const Center(child: Text('씬을 불러오는 중...'));
     }
 
-    return LayoutBuilder(
-      builder: (context, bc) {
-        final canvasSize = Size(bc.maxWidth, bc.maxHeight);
+    // --- Get scene dimensions ---
+    // Use scene dimensions for the canvas size, provide defaults if necessary
+    final double sceneWidth = scene.width.toDouble();
+    final double sceneHeight = scene.height.toDouble();
 
-        return Stack(
+    // Ensure dimensions are valid (> 0)
+    if (sceneWidth <= 0 || sceneHeight <= 0) {
+       return const Center(child: Text('씬 크기 정보가 유효하지 않습니다.'));
+    }
+
+
+    // Use InteractiveViewer for zoom/pan capabilities
+    return InteractiveViewer(
+      transformationController: _transformationController,
+      minScale: 0.1, // Minimum zoom level
+      maxScale: 4.0, // Maximum zoom level
+      constrained: false, // Allow panning beyond the bounds of the child
+      // boundaryMargin: EdgeInsets.all(double.infinity), // Allow infinite panning (optional)
+       boundaryMargin: const EdgeInsets.all(100.0), // Add some padding around the scene
+
+      // Builder is useful if you need the viewport size, but Stack works directly too
+      child: SizedBox(
+        width: sceneWidth,
+        height: sceneHeight,
+        child: Stack(
+          clipBehavior: Clip.none, // Allow markers partially outside the bounds
           children: [
-            // 메인 인터랙션 뷰 (줌/패닝)
+            // --- Background ---
             Positioned.fill(
-              child: InteractiveViewer(
-                transformationController: _t,
-                minScale: 0.5,
-                maxScale: 3.5,
-                boundaryMargin: const EdgeInsets.all(2000),
-                constrained: false, // 캔버스에 여백을 둬서 패닝 여유 확보
-                child: Stack(
-                  children: [
-                    // 배경
-                    SizedBox(
-                      width: canvasSize.width,
-                      height: canvasSize.height,
-                      child: scene.backgroundUrl == null
-                          ? Container(color: Colors.black12)
-                          : CachedNetworkImage(
-                              imageUrl: scene.backgroundUrl!,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => const Center(
-                                  child: CircularProgressIndicator()),
-                              errorWidget: (context, url, error) =>
-                                  const Center(child: Icon(Icons.error)),
-                            ),
-                    ),
-
-                    // 그리드 (옵션)
-                    if (vtt.showGrid)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          ignoring: true,
-                          child: CustomPaint(
-                            painter: _GridPainter(
-                              spacing: (vtt.gridSize > 0) ? vtt.gridSize : 50.0,
-                              color: Colors.white.withOpacity(0.08),
-                              thickEvery: 5,
-                              thickColor: Colors.white.withOpacity(0.14),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    // 마커들
-                    ...markers.map(
-                      (m) => _MarkerItem(
-                        marker: m,
-                        selected: _selectedMarkerId == m.id,
-                        onTap: () => setState(() => _selectedMarkerId = m.id),
-                        onChanged: (dx, dy) {
-                          // 현재 배율을 고려해 논리 좌표로 변환
-                          final s = _scale <= 0.001 ? 1.0 : _scale;
-                          final ndx = dx / s;
-                          final ndy = dy / s;
-
-                          final newX = math.max(
-                            0.0,
-                            math.min(m.x + ndx, bc.maxWidth - m.width),
-                          ).toDouble();
-
-                          final newY = math.max(
-                            0.0,
-                            math.min(m.y + ndy, bc.maxHeight - m.height),
-                          ).toDouble();
-
-                          // 위치 변경은 소켓 서비스에 위임 (현 설계 유지)
-                          vtt.moveMarker(m.id, newX, newY);
-                        },
+              child: scene.backgroundUrl == null || scene.backgroundUrl!.isEmpty
+                  ? Container(color: Colors.grey[300]) // Use a lighter grey
+                  : CachedNetworkImage(
+                      imageUrl: scene.backgroundUrl!,
+                      fit: BoxFit.cover, // Cover the entire scene area
+                      placeholder: (context, url) => const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2)), // Smaller indicator
+                      errorWidget: (context, url, error) => Container(
+                        color: Colors.red[100], // Indicate error with color
+                        child: Center(
+                            child: Icon(Icons.error_outline,
+                                color: Colors.red[700])),
                       ),
                     ),
-                  ],
-                ),
-              ),
             ),
 
-            // 우상단 툴버튼 (그리드 토글 / 뷰 리셋)
-            Positioned(
-              top: 12,
-              right: 12,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.25),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: '축소',
-                      icon: const Icon(Icons.zoom_out, color: Colors.white),
-                      onPressed: _zoomOut,
-                    ),
-                    IconButton(
-                      tooltip: '확대',
-                      icon: const Icon(Icons.zoom_in, color: Colors.white),
-                      onPressed: _zoomIn,
-                    ),
-                    IconButton(
-                      tooltip: vtt.showGrid ? '그리드 끄기' : '그리드 켜기',
-                      icon: Icon(
-                        vtt.showGrid ? Icons.grid_off : Icons.grid_on,
-                        color: Colors.white,
-                      ),
-                      onPressed: () => vtt.setShowGrid(!vtt.showGrid),
-                    ),
-                    IconButton(
-                      tooltip: '뷰 리셋',
-                      icon: const Icon(Icons.center_focus_strong, color: Colors.white),
-                      onPressed: _resetView,
-                    ),
-                  ],
-                ),
+            // --- Markers ---
+            // Render markers based on the list from the provider
+            ...markers.map(
+              (m) => _MarkerItem(
+                key: ValueKey(m.id), // Add key for better performance
+                marker: m,
+                sceneWidth: sceneWidth, // Pass scene dimensions
+                sceneHeight: sceneHeight,
+                onPositionChanged: (dx, dy) {
+                  // Calculate new position based on drag delta
+                  // Apply boundary constraints relative to the scene dimensions
+                  final newX = max(
+                          0.0, min(m.x + dx, sceneWidth - m.width))
+                      .toDouble(); // Ensure marker stays within scene width
+                  final newY = max(
+                          0.0, min(m.y + dy, sceneHeight - m.height))
+                      .toDouble(); // Ensure marker stays within scene height
+
+                  // Check if position actually changed to avoid unnecessary updates
+                  if (newX != m.x || newY != m.y) {
+                    // Update position via the VttSocketService
+                     vtt.moveMarker(m.id, newX, newY);
+                  }
+                },
+                // Optional: Add onTap or onLongPress later for marker interactions
               ),
             ),
+             // --- Grid Layer (Optional Example) ---
+            // Positioned.fill(
+            //   child: CustomPaint(
+            //     painter: GridPainter(gridSize: 50.0), // Example grid size
+            //   ),
+            // ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }
 
+
+// --- _MarkerItem Widget ---
 class _MarkerItem extends StatelessWidget {
   final Marker marker;
-  final bool selected;
-  final VoidCallback onTap;
-  final void Function(double dx, double dy) onChanged;
+  final double sceneWidth;
+  final double sceneHeight;
+  final void Function(double dx, double dy) onPositionChanged;
+  // Add other callbacks as needed (onTap, onLongPress, etc.)
 
   const _MarkerItem({
-    super.key,
+    super.key, // Use super parameter syntax
     required this.marker,
-    required this.selected,
-    required this.onTap,
-    required this.onChanged,
+    required this.sceneWidth,
+    required this.sceneHeight,
+    required this.onPositionChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+     // Ensure marker dimensions are valid
+    final markerWidth = max(10.0, marker.width.toDouble()); // Minimum size
+    final markerHeight = max(10.0, marker.height.toDouble());
+
+    // Clamp initial position just in case it's outside bounds
+    final clampedX = max(0.0, min(marker.x, sceneWidth - markerWidth));
+    final clampedY = max(0.0, min(marker.y, sceneHeight - markerHeight));
+
+
     return Positioned(
-      left: marker.x,
-      top: marker.y,
-      width: marker.width.toDouble(),
-      height: marker.height.toDouble(),
+      left: clampedX,
+      top: clampedY,
+      width: markerWidth,
+      height: markerHeight,
       child: GestureDetector(
-        onTap: onTap,
-        onPanUpdate: (d) => onChanged(d.delta.dx, d.delta.dy),
-        child: Opacity(
-          opacity: 0.97,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: selected ? Colors.blueAccent : Colors.black26,
-                width: selected ? 2.0 : 1.0,
-              ),
-              color: Colors.white,
-              image: (marker.imageUrl != null)
-                  ? DecorationImage(
-                      image: CachedNetworkImageProvider(marker.imageUrl!),
-                      fit: BoxFit.cover,
-                    )
-                  : null,
-              boxShadow: [
-                if (selected)
+        // Use onPanUpdate for continuous dragging
+        onPanUpdate: (details) =>
+            onPositionChanged(details.delta.dx, details.delta.dy),
+        // Add onPanStart and onPanEnd if needed for drag start/end logic
+
+        child: Tooltip( // Add Tooltip to show marker name on hover/long-press
+          message: marker.name,
+          preferBelow: false,
+          child: Opacity(
+            opacity: 0.9, // Slightly more transparent
+            child: Container( // Use Container for more decoration options
+              decoration: BoxDecoration(
+                // borderRadius: BorderRadius.circular(markerWidth / 2), // Make it circular if desired
+                 borderRadius: BorderRadius.circular(4), // Slightly rounded corners
+                 border: Border.all(color: Colors.black.withOpacity(0.5), width: 1), // Softer border
+                color: marker.imageUrl == null || marker.imageUrl!.isEmpty
+                    ? Colors.blueGrey[100] // Default color if no image
+                    : Colors.transparent, // Transparent if image is present
+                boxShadow: [ // Add a subtle shadow
                   BoxShadow(
-                    color: Colors.blueAccent.withOpacity(0.3),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  ),
-              ],
-            ),
-            child: (marker.imageUrl == null)
-                ? Center(
-                    child: Text(
-                      marker.name,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                    ),
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 2,
+                    offset: const Offset(1, 1),
                   )
-                : const SizedBox.shrink(),
+                ],
+                image: (marker.imageUrl != null && marker.imageUrl!.isNotEmpty)
+                    ? DecorationImage(
+                        image: CachedNetworkImageProvider(marker.imageUrl!),
+                        fit: BoxFit.cover, // Or BoxFit.contain depending on preference
+                        onError: (exception, stackTrace) {
+                           // Optional: Handle image loading errors visually
+                           print("Error loading marker image: $exception");
+                         },
+                      )
+                    : null,
+              ),
+              // Display name inside if there's no image
+              child: (marker.imageUrl == null || marker.imageUrl!.isEmpty)
+                  ? Center(
+                      child: Text(
+                        marker.name,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                           fontWeight: FontWeight.bold,
+                           fontSize: markerWidth / 5, // Adjust font size based on marker size
+                           color: Colors.black87,
+                         ),
+                         overflow: TextOverflow.ellipsis, // Prevent overflow
+                      ),
+                    )
+                  : const SizedBox.shrink(), // Empty box if image exists
+            ),
           ),
         ),
       ),
@@ -252,48 +213,42 @@ class _MarkerItem extends StatelessWidget {
   }
 }
 
-/// 단순 그리드 페인터 (spacing 픽셀 간격, n번째마다 진하게)
-class _GridPainter extends CustomPainter {
-  final double spacing;
-  final int thickEvery;
-  final Color color;
-  final Color thickColor;
 
-  _GridPainter({
-    required this.spacing,
-    required this.color,
-    required this.thickEvery,
-    required this.thickColor,
+// --- Optional Grid Painter ---
+class GridPainter extends CustomPainter {
+  final double gridSize;
+  final Color gridColor;
+  final double strokeWidth;
+
+  GridPainter({
+    required this.gridSize,
+    this.gridColor = Colors.black26, // Lighter grid color
+    this.strokeWidth = 0.5, // Thinner lines
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pThin = Paint()
-      ..color = color
-      ..strokeWidth = 1.0;
-    final pThick = Paint()
-      ..color = thickColor
-      ..strokeWidth = 1.0;
+    if (gridSize <= 0) return;
 
-    // 수직선
-    for (int i = 0; i * spacing <= size.width; i++) {
-      final x = i * spacing;
-      final isThick = (i % thickEvery == 0);
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), isThick ? pThick : pThin);
+    final paint = Paint()
+      ..color = gridColor
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke;
+
+    // Draw vertical lines
+    for (double x = 0; x <= size.width; x += gridSize) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
-    // 수평선
-    for (int j = 0; j * spacing <= size.height; j++) {
-      final y = j * spacing;
-      final isThick = (j % thickEvery == 0);
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), isThick ? pThick : pThin);
+
+    // Draw horizontal lines
+    for (double y = 0; y <= size.height; y += gridSize) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _GridPainter old) {
-    return old.spacing != spacing ||
-        old.color != color ||
-        old.thickColor != thickColor ||
-        old.thickEvery != thickEvery;
+  bool shouldRepaint(covariant GridPainter oldDelegate) {
+    // Only repaint if grid size or color changes
+    return oldDelegate.gridSize != gridSize || oldDelegate.gridColor != gridColor;
   }
 }

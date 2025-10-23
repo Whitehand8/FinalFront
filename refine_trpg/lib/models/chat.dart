@@ -1,60 +1,94 @@
-// models/chat.dart
-// 단일 ChatMessage 모델: 백엔드 MessageResponseDto(WS/REST)와 기존 로컬 포맷을 모두 파싱
-// - 서버 DTO: { id, senderId, content, sentAt }
-// - 레거시/로컬: { nickname/sender, message/content, timestamp }
+import 'package:flutter/foundation.dart'; // For debugPrint
+
+// lib/models/chat.dart
 class ChatMessage {
-  final int? id;        // 서버 메시지 PK (선택)
-  final int? senderId;  // 서버 사용자 ID (선택)
-  final String sender;  // 표시용 닉네임/이름
+  // Use int? for ID as it comes from the backend database (might be null for optimistic updates).
+  final int? id;
+  // Use int for senderId as per backend DTO.
+  final int senderId;
   final String content;
-  final DateTime timestamp;
+  // Use DateTime and name it 'sentAt' to match backend DTO.
+  final DateTime sentAt;
+  // Removed 'sender' nickname field - Not part of the core message data from backend.
+  // Fetch sender info separately in the UI if needed, using senderId.
 
   ChatMessage({
     this.id,
-    this.senderId,
-    required this.sender,
+    required this.senderId,
     required this.content,
-    required this.timestamp,
+    required this.sentAt,
   });
 
+  /// Creates a ChatMessage from a JSON map, matching the backend's MessageResponseDto.
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    final rawSentAt = json['sentAt'] ?? json['timestamp'];
-    DateTime ts;
-    if (rawSentAt is String) {
-      ts = DateTime.tryParse(rawSentAt) ?? DateTime.now();
-    } else if (rawSentAt is DateTime) {
-      ts = rawSentAt;
+    int? parsedId;
+    if (json['id'] != null) {
+      // Ensure ID is parsed as int. Handle potential String case if necessary.
+      if (json['id'] is String) {
+        parsedId = int.tryParse(json['id']);
+      } else if (json['id'] is int) {
+        parsedId = json['id'];
+      } else {
+         debugPrint('Warning: ChatMessage ID format unexpected: ${json['id']}');
+      }
+    }
+
+    int parsedSenderId;
+    // Ensure senderId is parsed as int.
+    if (json['senderId'] is String) {
+        parsedSenderId = int.tryParse(json['senderId'] ?? '') ?? 0; // Default to 0 or handle error
+    } else if (json['senderId'] is int) {
+        parsedSenderId = json['senderId'];
     } else {
-      ts = DateTime.now();
+        debugPrint('Warning: ChatMessage senderId format unexpected: ${json['senderId']}');
+        parsedSenderId = 0; // Default or throw error
     }
 
-    int? parseInt(dynamic v) {
-      if (v is int) return v;
-      if (v is String) return int.tryParse(v);
-      return null;
-    }
 
-    final displayNameRaw = (json['nickname'] ?? json['sender'])?.toString();
-    final displayName = (displayNameRaw != null && displayNameRaw.isNotEmpty)
-        ? displayNameRaw
-        : (json['senderId'] != null ? '#${json['senderId']}' : 'Unknown');
+    DateTime parsedSentAt;
+    try {
+      // Backend sends 'sentAt' as an ISO 8601 string.
+      parsedSentAt = DateTime.parse(json['sentAt'] as String);
+    } catch (e) {
+      debugPrint('Error parsing sentAt timestamp: ${json['sentAt']} - $e');
+      parsedSentAt = DateTime.now(); // Fallback to current time if parsing fails
+    }
 
     return ChatMessage(
-      id: parseInt(json['id']),
-      senderId: parseInt(json['senderId']),
-      sender: displayName,
-      content: (json['content'] ?? json['message'] ?? '').toString(),
-      timestamp: ts,
+      id: parsedId,
+      senderId: parsedSenderId,
+      content: json['content'] as String? ?? '', // Handle potential null content
+      sentAt: parsedSentAt,
     );
   }
 
+  /// Converts a ChatMessage instance to a JSON map.
+  /// Note: This might not be directly used for sending messages if the backend
+  /// expects a different structure (like CreateChatMessageDto within CreateChatMessagesDto).
   Map<String, dynamic> toJson() {
     return {
+      // Include id only if it's not null (usually not sent when creating a new message)
       if (id != null) 'id': id,
-      if (senderId != null) 'senderId': senderId,
-      'sender': sender,
+      'senderId': senderId,
       'content': content,
-      'timestamp': timestamp.toIso8601String(),
+      // Use 'sentAt' key and ISO 8601 format.
+      'sentAt': sentAt.toIso8601String(),
     };
   }
+
+  // --- Equality and HashCode ---
+  // Updated to use the correct fields for comparison.
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChatMessage &&
+          runtimeType == other.runtimeType &&
+          id == other.id && // Compare ID
+          senderId == other.senderId && // Compare senderId
+          sentAt == other.sentAt; // Compare sentAt
+
+  @override
+  // Use id, senderId, and sentAt for hashCode calculation.
+  int get hashCode => id.hashCode ^ senderId.hashCode ^ sentAt.hashCode;
 }
