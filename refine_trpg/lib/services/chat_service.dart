@@ -11,7 +11,7 @@ import 'auth_service.dart'; // For authentication token
 
 class ChatService with ChangeNotifier {
   // --- Constants ---
-  static const String _baseUrl = 'http://localhost:11122'; // Backend base URL
+  static const String _baseUrl = 'http://localhost:11123'; // Backend base URL
   static const String _chatNamespace = '/chat'; // Chat WebSocket namespace from backend
 
   // --- State Variables ---
