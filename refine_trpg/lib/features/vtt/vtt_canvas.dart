@@ -2,9 +2,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import '../../models/token.dart'; // Token 모델 임포트
-import '../../services/vtt_socket_service.dart';
-import '../../models/vtt_map.dart'; // VttScene 대신 VttMap 임포트
+import 'package:refine_trpg/models/token.dart'; // Token 모델 임포트
+import 'package:refine_trpg/services/vtt_socket_service.dart';
+import 'package:refine_trpg/models/vtt_map.dart'; // VttScene 대신 VttMap 임포트
 
 class VttCanvas extends StatefulWidget {
   const VttCanvas({super.key});

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../core/rules_engine.dart';
+import 'package:refine_trpg/systems/core/rules_engine.dart';
 
 class Coc7eSheet extends StatefulWidget {
   final TrpgRules rules;

@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../models/character.dart'; // 수정: 상대 경로 또는 패키지 경로 사용
-import '../../../services/chat_service.dart'; // 수정: 상대 경로 또는 패키지 경로 사용
-import '../../../services/vtt_socket_service.dart'; // 수정: 상대 경로 또는 패키지 경로 사용
-import '../../../features/vtt/vtt_canvas.dart'; // 수정: 상대 경로 또는 패키지 경로 사용
-import '../../../widgets/chat_bubble_widget.dart'; // 수정: 상대 경로 또는 패키지 경로 사용
+import 'package:refine_trpg/models/character.dart';
+import 'package:refine_trpg/services/chat_service.dart';
+import 'package:refine_trpg/services/vtt_socket_service.dart';
+import 'package:refine_trpg/widgets/chat_bubble_widget.dart';
 import 'dice_panel.dart'; // DicePanel 임포트
 import 'character_sheet_overlay.dart'; // CharacterSheetOverlay 임포트
 
 class RoomBodyStack extends StatelessWidget {
   final bool isDicePanelOpen;
   final Character? selectedCharacter;
-  final String systemId;
+  // [제거됨] final String systemId; // CharacterSheetOverlay가 character 객체에서 직접 trpgType을 사용
   final Map<String, TextEditingController> statControllers;
   final Map<String, TextEditingController> generalControllers;
   final List<int> diceFaces; // 주사위 면 목록
@@ -28,7 +27,7 @@ class RoomBodyStack extends StatelessWidget {
     super.key,
     required this.isDicePanelOpen,
     required this.selectedCharacter,
-    required this.systemId,
+    // [제거됨] required this.systemId,
     required this.statControllers,
     required this.generalControllers,
     required this.diceFaces,
@@ -113,13 +112,13 @@ class RoomBodyStack extends StatelessWidget {
 
         // --- Character Sheet Overlay (분리된 위젯 사용) ---
         CharacterSheetOverlay(
-           key: const ValueKey('character_sheet_overlay'), // 고유 키 추가
-           character: selectedCharacter,
-           systemId: systemId,
-           statControllers: statControllers,
-           generalControllers: generalControllers,
-           onClose: onCloseCharacterSheet, // 콜백 전달
-           onSave: onSaveCharacter,       // 콜백 전달
+          key: const ValueKey('character_sheet_overlay'), // 고유 키 추가
+          character: selectedCharacter,
+          // [수정됨] systemId: systemId, // 이 줄을 제거합니다.
+          statControllers: statControllers,
+          generalControllers: generalControllers,
+          onClose: onCloseCharacterSheet, // 콜백 전달
+          onSave: onSaveCharacter, // 콜백 전달
         ),
 
         // --- Dice Panel Overlay (분리된 위젯 사용) ---
@@ -132,7 +131,7 @@ class RoomBodyStack extends StatelessWidget {
               diceFaces: diceFaces,
               diceCounts: diceCounts,
               onCountChanged: onDiceCountChanged, // 콜백 전달
-              onRoll: onRollDice,                 // 콜백 전달
+              onRoll: onRollDice, // 콜백 전달
             ),
           ),
       ],

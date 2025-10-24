@@ -1,5 +1,5 @@
-import '../coc7e/coc7e_rules.dart';
-import '../dnd5e/dnd5e_rules.dart';
+import 'package:refine_trpg/systems/coc7e/coc7e_rules.dart';
+import 'package:refine_trpg/systems/dnd5e/dnd5e_rules.dart';
 import 'rules_engine.dart';
 
 final Map<String, TrpgRules> _systems = {

@@ -1,44 +1,50 @@
-// =======================================================================
-// 📲 IMPORTS & BASIC SETUP
-// =======================================================================
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../routes.dart';
-import '../services/navigation_service.dart';
-import '../services/auth_service.dart';
-import '../services/auth_state_manager.dart';
-import '../services/settings_manager.dart';
+import 'package:refine_trpg/routes.dart';
+import 'package:refine_trpg/services/navigation_service.dart';
+import 'package:refine_trpg/services/auth_service.dart';
+import 'package:refine_trpg/services/auth_state_manager.dart';
+import 'package:refine_trpg/services/settings_manager.dart';
+import 'package:flutter/foundation.dart'; // For debugPrint
 
 /// 앱의 다양한 설정 옵션을 관리하는 화면입니다.
 class OptionsScreen extends StatelessWidget {
   const OptionsScreen({super.key});
 
-  // =======================================================================
-  // 🔐 ACCOUNT MANAGEMENT METHODS (LOGOUT & DELETE)
-  // =======================================================================
-
   /// 로그아웃 처리를 수행합니다.
   Future<void> _logout(BuildContext context) async {
+    // Show loading indicator or disable button here if needed
     try {
       await AuthService.clearToken();
-      // AuthStateManager를 통해 앱의 로그인 상태를 업데이트합니다.
-      Provider.of<AuthStateManager>(context, listen: false).logout();
+
+      // [수정됨] context 사용 전 mounted 확인
+      if (!context.mounted) return;
+
+      // Use read for safety in async gaps
+      context.read<AuthStateManager>().logout();
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('로그아웃되었습니다.')),
       );
-      // 모든 이전 화면 기록을 삭제하고 메인 화면으로 이동합니다.
+      // Navigate after state update
       NavigationService.pushAndRemoveUntil(Routes.main);
     } catch (e) {
+      debugPrint("Logout error: $e");
+      // [수정됨] context 사용 전 mounted 확인
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('로그아웃 중 오류가 발생했습니다.')),
+        SnackBar(content: Text('로그아웃 중 오류가 발생했습니다: ${e.toString()}')),
       );
+    } finally {
+      // Hide loading indicator here if used
     }
   }
 
   /// 회원 탈퇴 확인 다이얼로그를 표시합니다.
   void _showDeleteAccountDialog(BuildContext context) {
+    // Check mounted before showing dialog
+    if (!context.mounted) return;
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -53,7 +59,8 @@ class OptionsScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 Navigator.of(dialogContext).pop();
-                _deleteAccount(context); // 실제 탈퇴 로직 호출
+                // Pass the original context (from build method) to the delete function
+                _deleteAccount(context);
               },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               child: const Text('탈퇴'),
@@ -66,12 +73,16 @@ class OptionsScreen extends StatelessWidget {
 
   /// 실제 회원 탈퇴를 처리하는 함수입니다.
   Future<void> _deleteAccount(BuildContext context) async {
+     // Show loading indicator or disable button here if needed
     try {
       final result = await AuthService.deleteAccount();
+
+      // [수정됨] context 사용 전 mounted 확인
       if (!context.mounted) return;
 
       if (result['success']) {
-        Provider.of<AuthStateManager>(context, listen: false).logout();
+         // Use read for safety in async gaps
+        context.read<AuthStateManager>().logout();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? '계정이 삭제되었습니다.'),
@@ -88,10 +99,14 @@ class OptionsScreen extends StatelessWidget {
         );
       }
     } catch (e) {
+      debugPrint("Delete account error: $e");
+      // [수정됨] context 사용 전 mounted 확인
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('회원탈퇴 중 오류가 발생했습니다: ${e.toString()}')),
       );
+    } finally {
+       // Hide loading indicator here if used
     }
   }
 
@@ -107,7 +122,7 @@ class OptionsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('설정'),
-        backgroundColor: const Color(0xFF8C7853),
+        // backgroundColor: const Color(0xFF8C7853), // Or use theme color
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => NavigationService.goBack(),
@@ -118,51 +133,60 @@ class OptionsScreen extends StatelessWidget {
         child: ListView(
           children: [
             // --- 일반 설정 ---
+            _buildSectionTitle('일반'),
             Card(
               child: ListTile(
+                leading: const Icon(Icons.notifications_outlined),
                 title: const Text('알림'),
                 trailing: Switch(
                   value: settings.notificationsEnabled,
                   onChanged: (value) {
-                    context
-                        .read<SettingsManager>()
-                        .updateNotificationsEnabled(value);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('알림 설정이 저장되었습니다.')),
-                    );
+                    // Use read for actions
+                    context.read<SettingsManager>().updateNotificationsEnabled(value);
+                    if (context.mounted) { // Check mounted before showing SnackBar
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('알림 설정 저장됨'), duration: Duration(seconds: 1)),
+                      );
+                    }
                   },
                 ),
               ),
             ),
             Card(
               child: ListTile(
+                leading: const Icon(Icons.volume_up_outlined),
                 title: const Text('사운드'),
                 trailing: Switch(
                   value: settings.soundEnabled,
                   onChanged: (value) {
                     context.read<SettingsManager>().updateSoundEnabled(value);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('사운드 설정이 저장되었습니다.')),
-                    );
+                     if (context.mounted) { // Check mounted
+                       ScaffoldMessenger.of(context).showSnackBar(
+                         const SnackBar(content: Text('사운드 설정 저장됨'), duration: Duration(seconds: 1)),
+                       );
+                    }
                   },
                 ),
               ),
             ),
             Card(
               child: ListTile(
+                leading: const Icon(Icons.color_lens_outlined),
                 title: const Text('테마'),
-                subtitle: Text(settings.themeModeToString()),
-                trailing: const Icon(Icons.arrow_forward),
+                subtitle: Text(settings.themeModeToString()), // Display current theme
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () => _showThemeSelectionDialog(context),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24), // Increased spacing
 
             // --- 계정 관리 ---
+             _buildSectionTitle('계정'),
             Card(
               child: ListTile(
-                leading: const Icon(Icons.edit),
+                leading: const Icon(Icons.edit_outlined),
                 title: const Text('닉네임 변경'),
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () => _showNicknameChangeDialog(context),
               ),
             ),
@@ -170,6 +194,7 @@ class OptionsScreen extends StatelessWidget {
               child: ListTile(
                 leading: const Icon(Icons.lock_outline),
                 title: const Text('비밀번호 변경'),
+                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _showPasswordChangeDialog(context),
               ),
             ),
@@ -177,39 +202,62 @@ class OptionsScreen extends StatelessWidget {
               child: ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('로그아웃'),
+                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _showLogoutDialog(context),
               ),
             ),
             Card(
-              color: Colors.red[50],
+              // color: Colors.red[50], // Use theme error color container?
               child: ListTile(
-                leading: const Icon(Icons.delete_forever, color: Colors.red),
-                title: const Text('회원탈퇴', style: TextStyle(color: Colors.red)),
+                leading: Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
+                title: Text('회원탈퇴', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () => _showDeleteAccountDialog(context),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24), // Increased spacing
 
             // --- 앱 정보 ---
+            _buildSectionTitle('정보'),
             Card(
               child: ListTile(
-                leading: const Icon(Icons.info),
+                leading: const Icon(Icons.info_outline),
                 title: const Text('앱 정보'),
+                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   showAboutDialog(
                     context: context,
-                    applicationName: 'TRPG App',
-                    applicationVersion: 'v1.0.0',
-                    applicationLegalese: '© 2025 My TRPG Team',
+                    applicationName: 'Refined TRPG', // Updated name
+                    applicationVersion: '0.1.0', // Example version
+                    applicationLegalese: '© 2025 Raughtale Team', // Example
+                    // applicationIcon: Image.asset('assets/icon/app_icon.png', width: 48, height: 48), // Add app icon if available
                   );
                 },
               ),
             ),
+             // Add link to privacy policy or terms of service if applicable
+             // Card(child: ListTile( ... )),
           ],
         ),
       ),
     );
   }
+
+  // Helper widget for section titles
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8.0, top: 16.0, bottom: 8.0),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey[700], // Or use theme color
+        ),
+      ),
+    );
+  }
+
 
   // =======================================================================
   // 🧩 DIALOG & HELPER WIDGETS
@@ -217,101 +265,117 @@ class OptionsScreen extends StatelessWidget {
 
   /// 비밀번호 변경 다이얼로그를 표시합니다.
   void _showPasswordChangeDialog(BuildContext context) {
+    // Check mounted before showing dialog
+    if (!context.mounted) return;
+
     final formKey = GlobalKey<FormState>();
     final currentPasswordController = TextEditingController();
     final newPasswordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
-    bool isLoading = false;
+    bool isLoading = false; // State for loading indicator within the dialog
 
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: !isLoading, // Prevent dismissal while loading
       builder: (dialogContext) {
+        // Use StatefulBuilder to manage isLoading state within the dialog
         return StatefulBuilder(
-          builder: (context, setState) {
+          builder: (stfContext, stfSetState) { // Use stfContext and stfSetState
+            // Actual password change logic
             Future<void> changePassword() async {
-              if (!formKey.currentState!.validate()) return;
+              if (!formKey.currentState!.validate()) return; // Validate first
 
-              setState(() => isLoading = true);
+              stfSetState(() => isLoading = true); // Show loading indicator
+              String? errorMessage; // Store potential error message
+
               try {
                 final result = await AuthService.updatePassword(
                   currentPassword: currentPasswordController.text,
                   newPassword: newPasswordController.text,
                 );
 
+                // Check mounted status *before* using context after await
+                if (!dialogContext.mounted) return;
+
                 if (result['success']) {
-                  Navigator.of(dialogContext).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  Navigator.of(dialogContext).pop(); // Close dialog on success
+                  ScaffoldMessenger.of(context).showSnackBar( // Show on main screen
                     SnackBar(
-                        content: Text(result['message']),
+                        content: Text(result['message'] ?? '비밀번호 변경 성공'),
                         backgroundColor: Colors.green),
                   );
+                  return; // Exit function on success
                 } else {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    SnackBar(
-                        content: Text(result['message']),
-                        backgroundColor: Colors.red),
-                  );
+                  errorMessage = result['message']; // Store error message from result
                 }
               } catch (e) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(content: Text('비밀번호 변경 중 오류: ${e.toString()}')),
-                );
+                 debugPrint("Password change error: $e");
+                 errorMessage = '비밀번호 변경 중 오류 발생';
               } finally {
-                if (Navigator.of(context).canPop()) {
-                  setState(() => isLoading = false);
-                }
+                 // Check mounted status again before calling stfSetState
+                 if (stfContext.mounted) {
+                   stfSetState(() => isLoading = false); // Hide loading indicator
+                 }
+              }
+
+              // Show error message if not successful
+              if (errorMessage != null && dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(
+                        content: Text(errorMessage),
+                        backgroundColor: Colors.redAccent),
+                  );
               }
             }
 
+            // Dialog UI
             return AlertDialog(
               title: const Text('비밀번호 변경'),
               content: Form(
                 key: formKey,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.min, // Fit content height
                   children: [
                     if (isLoading)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 16.0),
-                        child: LinearProgressIndicator(),
+                        child: LinearProgressIndicator(), // Show loading bar
                       ),
                     TextFormField(
                       controller: currentPasswordController,
-                      decoration: const InputDecoration(
-                          labelText: '현재 비밀번호', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(labelText: '현재 비밀번호'),
                       obscureText: true,
-                      validator: (v) =>
-                          (v == null || v.isEmpty) ? '현재 비밀번호를 입력하세요.' : null,
+                      enabled: !isLoading, // Disable fields while loading
+                      validator: (v) => (v == null || v.isEmpty) ? '현재 비밀번호를 입력하세요.' : null,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: newPasswordController,
-                      decoration: const InputDecoration(
-                          labelText: '새 비밀번호', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(labelText: '새 비밀번호'),
                       obscureText: true,
+                      enabled: !isLoading,
                       validator: (v) {
                         if (v == null || v.isEmpty) return '새 비밀번호를 입력하세요.';
                         if (v.length < 8) return '비밀번호는 8자 이상이어야 합니다.';
-                        final passwordRegex = RegExp(
-                            r'^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$');
-                        if (!passwordRegex.hasMatch(v))
-                          return '문자, 숫자, 특수문자를 포함해야 합니다.';
-                        if (v == currentPasswordController.text)
-                          return '현재 비밀번호와 다른 비밀번호를 사용해주세요.';
+                        // Basic complexity check (example: require letter and number)
+                        // More complex rules might be needed based on backend requirements
+                        final hasLetter = v.contains(RegExp(r'[a-zA-Z]'));
+                        final hasNumber = v.contains(RegExp(r'\d'));
+                        if (!hasLetter || !hasNumber) return '문자와 숫자를 포함해야 합니다.';
+                        // Ensure it's different from the current password
+                        if (v == currentPasswordController.text) return '현재 비밀번호와 다른 비밀번호를 사용해주세요.';
                         return null;
                       },
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: confirmPasswordController,
-                      decoration: const InputDecoration(
-                          labelText: '새 비밀번호 확인', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(labelText: '새 비밀번호 확인'),
                       obscureText: true,
+                      enabled: !isLoading,
                       validator: (v) {
                         if (v == null || v.isEmpty) return '새 비밀번호를 다시 입력하세요.';
-                        if (v != newPasswordController.text)
-                          return '새 비밀번호가 일치하지 않습니다.';
+                        if (v != newPasswordController.text) return '새 비밀번호가 일치하지 않습니다.';
                         return null;
                       },
                     ),
@@ -320,11 +384,13 @@ class OptionsScreen extends StatelessWidget {
               ),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    // Disable cancel while loading
+                    onPressed: isLoading ? null : () => Navigator.of(dialogContext).pop(),
                     child: const Text('취소')),
                 ElevatedButton(
+                    // Disable button while loading
                     onPressed: isLoading ? null : changePassword,
-                    child: const Text('변경')),
+                    child: const Text('변경하기')),
               ],
             );
           },
@@ -333,86 +399,128 @@ class OptionsScreen extends StatelessWidget {
     );
   }
 
+
   /// 닉네임 변경 다이얼로그를 표시합니다.
   void _showNicknameChangeDialog(BuildContext context) {
+    // Check mounted before showing dialog
+    if (!context.mounted) return;
+
     final nicknameController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     bool isLoading = false;
-    bool isNicknameChecked = false;
-    bool isNicknameAvailable = false;
+    bool isNicknameChecked = false; // Was the availability check performed?
+    bool isNicknameAvailable = false; // Is the currently entered nickname available?
 
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: !isLoading, // Prevent dismissal while loading
       builder: (dialogContext) {
+        // Use StatefulBuilder for managing state within the dialog
         return StatefulBuilder(
-          builder: (context, setState) {
-            // 닉네임 중복 확인 로직
+          builder: (stfContext, stfSetState) { // Use specific context/setState
+
+            // --- Nickname Availability Check Logic ---
             Future<void> checkNickname() async {
-              if (!formKey.currentState!.validate()) return;
-              setState(() => isLoading = true);
+              // Validate only the nickname field for this check
+              final isNicknameValid = formKey.currentState?.validate() ?? false;
+              if (!isNicknameValid) return; // Don't proceed if format is wrong
+
+              stfSetState(() => isLoading = true); // Show loading
+              String? message;
+              bool success = false;
+
               try {
                 final result = await AuthService.checkNicknameAvailability(
                   nickname: nicknameController.text.trim(),
                 );
-                setState(() {
-                  isNicknameChecked = true;
-                  isNicknameAvailable = result['success'];
-                });
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(
-                    content: Text(result['message']),
-                    backgroundColor:
-                        result['success'] ? Colors.green : Colors.red,
-                  ),
-                );
+                message = result['message'];
+                success = result['success'];
               } catch (e) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(content: Text('닉네임 확인 중 오류: ${e.toString()}')),
-                );
+                 debugPrint("Nickname check error: $e");
+                 message = '닉네임 확인 중 오류 발생';
               } finally {
-                setState(() => isLoading = false);
+                 // Check mounted before updating state
+                 if (stfContext.mounted) {
+                   stfSetState(() {
+                     isLoading = false;
+                     isNicknameChecked = true; // Mark check as performed
+                     isNicknameAvailable = success; // Store availability result
+                   });
+                 }
               }
+
+              // Show result in dialog's SnackBar
+               if (message != null && dialogContext.mounted) {
+                 ScaffoldMessenger.of(dialogContext).showSnackBar(
+                   SnackBar(
+                     content: Text(message),
+                     backgroundColor: success ? Colors.green : Colors.redAccent,
+                     duration: const Duration(seconds: 2),
+                   ),
+                 );
+               }
             }
 
-            // 닉네임 변경 로직
+            // --- Nickname Update Logic ---
             Future<void> updateNickname() async {
+              // Ensure nickname was checked and is available
               if (!isNicknameChecked || !isNicknameAvailable) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  const SnackBar(content: Text('닉네임 중복 확인을 먼저 완료해주세요.')),
-                );
+                 if (dialogContext.mounted) {
+                   ScaffoldMessenger.of(dialogContext).showSnackBar(
+                     const SnackBar(content: Text('사용 가능한 닉네임인지 먼저 확인해주세요.')),
+                   );
+                 }
                 return;
               }
-              setState(() => isLoading = true);
+              // Full form validation before final update
+               if (!formKey.currentState!.validate()) return;
+
+              stfSetState(() => isLoading = true); // Show loading
+              String? message;
+              bool success = false;
+
               try {
                 final result = await AuthService.updateNickname(
-                  nickname: nicknameController.text.trim(),
+                  newNickname: nicknameController.text.trim(), // Correct parameter name
                 );
-                if (result['success']) {
-                  Navigator.of(dialogContext).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
+                message = result['message'];
+                success = result['success'];
+
+                // Check mounted before interacting with context after await
+                if (!dialogContext.mounted) return;
+
+                if (success) {
+                  Navigator.of(dialogContext).pop(); // Close dialog on success
+                  ScaffoldMessenger.of(context).showSnackBar( // Show on main screen
                     SnackBar(
-                        content: Text(result['message']),
+                        content: Text(message ?? '닉네임 변경 성공'),
                         backgroundColor: Colors.green),
                   );
-                } else {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    SnackBar(
-                        content: Text(result['message']),
-                        backgroundColor: Colors.red),
-                  );
+                  // Optionally update user info in a local state manager if needed
+                  return; // Exit on success
                 }
               } catch (e) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(content: Text('닉네임 변경 중 오류: ${e.toString()}')),
-                );
+                 debugPrint("Nickname update error: $e");
+                 message = '닉네임 변경 중 오류 발생';
               } finally {
-                if (Navigator.of(context).canPop()) {
-                  setState(() => isLoading = false);
-                }
+                 // Check mounted before updating state
+                 if (stfContext.mounted) {
+                   stfSetState(() => isLoading = false);
+                 }
+              }
+
+              // Show error message if update failed
+              if (message != null && dialogContext.mounted) {
+                 ScaffoldMessenger.of(dialogContext).showSnackBar(
+                   SnackBar(
+                     content: Text(message),
+                     backgroundColor: Colors.redAccent,
+                   ),
+                 );
               }
             }
 
+            // --- Dialog UI ---
             return AlertDialog(
               title: const Text('닉네임 변경'),
               content: Form(
@@ -426,50 +534,50 @@ class OptionsScreen extends StatelessWidget {
                         child: LinearProgressIndicator(),
                       ),
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start, // Align button properly
                       children: [
                         Expanded(
                           child: TextFormField(
                             controller: nicknameController,
+                            enabled: !isLoading,
                             decoration: InputDecoration(
                               labelText: '새 닉네임',
+                              hintText: '2자 이상',
                               border: const OutlineInputBorder(),
+                              // Show check/cancel icon based on availability check result
                               suffixIcon: isNicknameChecked
                                   ? Icon(
-                                      isNicknameAvailable
-                                          ? Icons.check_circle
-                                          : Icons.cancel,
-                                      color: isNicknameAvailable
-                                          ? Colors.green
-                                          : Colors.red,
+                                      isNicknameAvailable ? Icons.check_circle_outline : Icons.highlight_off,
+                                      color: isNicknameAvailable ? Colors.green : Colors.red,
                                     )
-                                  : null,
+                                  : null, // No icon if not checked yet
                             ),
+                            // Reset check status when text changes
                             onChanged: (_) {
-                              setState(() {
-                                isNicknameChecked = false;
-                                isNicknameAvailable = false;
-                              });
+                              if (isNicknameChecked && stfContext.mounted) {
+                                stfSetState(() {
+                                  isNicknameChecked = false;
+                                  isNicknameAvailable = false;
+                                });
+                              }
                             },
                             validator: (v) {
-                              if (v == null || v.trim().isEmpty) {
-                                return '닉네임을 입력하세요.';
-                              }
-                              if (v.trim().length < 2) {
-                                return '2자 이상 입력하세요.';
-                              }
+                              final trimmed = v?.trim() ?? '';
+                              if (trimmed.isEmpty) return '닉네임을 입력하세요.';
+                              if (trimmed.length < 2) return '닉네임은 2자 이상이어야 합니다.';
+                              // Add other validation rules if needed (e.g., allowed characters)
                               return null;
                             },
                           ),
                         ),
                         const SizedBox(width: 8),
+                        // Availability Check Button
                         ElevatedButton(
                           onPressed: isLoading ? null : checkNickname,
                           style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 15),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15), // Adjust padding
                           ),
-                          child: const Text('확인'),
+                          child: const Text('중복확인'),
                         ),
                       ],
                     ),
@@ -478,13 +586,14 @@ class OptionsScreen extends StatelessWidget {
               ),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    onPressed: isLoading ? null : () => Navigator.of(dialogContext).pop(),
                     child: const Text('취소')),
+                // Update Button - Enabled only if checked and available
                 ElevatedButton(
-                  onPressed: (isLoading || !isNicknameAvailable)
-                      ? null
+                  onPressed: (isLoading || !isNicknameChecked || !isNicknameAvailable)
+                      ? null // Disable if loading, not checked, or not available
                       : updateNickname,
-                  child: const Text('변경'),
+                  child: const Text('변경하기'),
                 ),
               ],
             );
@@ -494,56 +603,81 @@ class OptionsScreen extends StatelessWidget {
     );
   }
 
+
   /// 테마 선택 다이얼로그를 표시합니다.
   void _showThemeSelectionDialog(BuildContext context) {
+    if (!context.mounted) return;
+
     final settings = context.read<SettingsManager>();
+    final currentThemeString = settings.themeModeToString();
+
+    // [수정됨] 테마 옵션 목록을 함수 내부에 직접 정의
+    const List<String> themeOptions = ['기본', '라이트', '다크'];
+    // TODO: 또는 SettingsManager 클래스 내부에 static const List<String> themeOptions = [...] 로 정의하고 SettingsManager.themeOptions 로 접근
+
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: const Text('테마 선택'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
-            children: ['기본', '라이트', '다크'].map((theme) {
+            // [수정됨] 직접 정의한 themeOptions 리스트 사용
+            children: themeOptions.map((themeString) {
               return RadioListTile<String>(
-                title: Text(theme),
-                value: theme,
-                groupValue: settings.themeModeToString(),
+                title: Text(themeString),
+                value: themeString,
+                groupValue: currentThemeString,
                 onChanged: (value) {
                   if (value != null) {
-                    settings.updateTheme(value);
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('테마가 $value(으)로 변경되었습니다.')),
-                    );
+                    settings.updateTheme(value); // SettingsManager 업데이트 호출
+                    Navigator.of(dialogContext).pop(); // 다이얼로그 닫기
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('테마가 $value(으)로 변경되었습니다.'), duration: const Duration(seconds: 2)),
+                      );
+                    }
                   }
                 },
               );
             }).toList(),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('닫기'),
+            ),
+          ],
         );
       },
     );
   }
 
+
   /// 로그아웃 확인 다이얼로그를 표시합니다.
   void _showLogoutDialog(BuildContext context) {
+     // Check mounted before showing dialog
+    if (!context.mounted) return;
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) { // Use dialogContext
         return AlertDialog(
           title: const Text('로그아웃'),
           content: const Text('정말 로그아웃하시겠습니까?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(), // Close this dialog
               child: const Text('취소'),
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.of(context).pop();
-                _logout(context);
+                Navigator.of(dialogContext).pop(); // Close this dialog
+                _logout(context); // Call logout using the original screen's context
               },
+              style: ElevatedButton.styleFrom(
+                 backgroundColor: Theme.of(context).colorScheme.primary, // Use theme color
+                 foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              ),
               child: const Text('로그아웃'),
             ),
           ],
@@ -551,4 +685,5 @@ class OptionsScreen extends StatelessWidget {
       },
     );
   }
-}
+
+} // End of OptionsScreen

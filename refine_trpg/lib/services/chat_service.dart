@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 // TODO: Ensure ChatMessage model path is correct after potential refactoring
-import '../models/chat.dart'; //
+import 'package:refine_trpg/models/chat.dart'; //
 import 'auth_service.dart'; // For authentication token
 // TODO: Potentially import user profile/state management service to get senderId/nickname
 // import 'user_profile_service.dart';

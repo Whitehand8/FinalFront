@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart'; // For debugPrint
 import 'package:http/http.dart' as http;
-import '../models/room.dart';
-import '../models/participant.dart';
-import 'auth_service.dart'; // AuthService 임포트
+import 'package:refine_trpg/models/room.dart'; // Ensure room.dart uses int IDs
+import 'package:refine_trpg/models/participant.dart'; // Ensure participant.dart uses int IDs
+import 'auth_service.dart';
 import 'dart:io';
 import 'dart:async';
 
@@ -13,521 +14,421 @@ class RoomServiceException implements Exception {
   RoomServiceException(this.message, {this.statusCode});
 
   @override
-  String toString() => message;
+  String toString() => 'RoomService Error [$statusCode]: $message';
 }
 
 class RoomService {
-  static const String _baseUrl =
-      'http://localhost:11122'; // AuthService와 baseUrl 통일
-  // Use a single client for potential connection reuse, though http package handles this somewhat.
-  // Consider using a package like 'dio' for more advanced features if needed.
+  static const String _baseUrl = 'http://localhost:11122'; // Ensure correct backend HTTP port
+  // Consider using a singleton or dependency injection for http.Client
   static http.Client _client() => http.Client();
 
   // Helper to get headers, including Authorization if available
-  static Future<Map<String, String>> _headers({bool withAuth = false}) async {
+  static Future<Map<String, String>> _headers({bool withAuth = true}) async { // Default to true
     final headers = {
       'Content-Type': 'application/json',
-      'Accept': 'application/json', // Explicitly accept JSON responses
+      'Accept': 'application/json',
     };
-
     if (withAuth) {
-      final token = await AuthService.getToken(); // Fetch token from AuthService
+      final token = await AuthService.getToken();
       if (token != null) {
-        headers['Authorization'] = 'Bearer $token'; // Add Bearer token
+        headers['Authorization'] = 'Bearer $token';
+      } else {
+        // Handle missing token case if needed (e.g., throw error, log warning)
+        debugPrint("[RoomService] Warning: Authorization token is missing.");
       }
     }
     return headers;
   }
 
   // Helper to add a timeout to requests
-  static Future<dynamic> _requestWithTimeout(Future<dynamic> request) {
-    // Set a reasonable timeout duration (e.g., 10 seconds)
-    return request.timeout(const Duration(seconds: 10));
+  static Future<http.Response> _requestWithTimeout(Future<http.Response> request) {
+    // Consistent timeout duration
+    return request.timeout(const Duration(seconds: 15));
   }
 
-  // Helper to parse error messages from response body
-  static String _parseErrorMessage(String responseBody) {
+  // Helper to parse error messages from response body (UTF-8 safe)
+  static String _parseErrorMessage(http.Response response) {
     try {
-      // Try to decode JSON and extract 'message' or 'error' field
-      final Map<String, dynamic> json = jsonDecode(responseBody);
-      // Prioritize specific error keys, fallback to generic message or raw body
-      return json['error']?.toString()
-          ?? json['message']?.toString()
-          ?? '알 수 없는 오류 발생';
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is Map<String, dynamic>) {
+        return decoded['message']?.toString() ??
+               decoded['error']?.toString() ??
+               'Unknown error occurred.';
+      } else if (decoded is String && decoded.isNotEmpty) {
+        return decoded;
+      }
     } catch (e) {
-      // If response is not JSON or parsing fails, return raw body or generic message
-      return responseBody.isNotEmpty ? responseBody : '오류 응답 처리 실패';
+      debugPrint("[RoomService] Error decoding error response: $e");
+      // Fallback to reason phrase or raw body if decoding fails
+      final bodyString = utf8.decode(response.bodyBytes, allowMalformed: true);
+      return bodyString.isNotEmpty ? bodyString : (response.reasonPhrase ?? 'Request failed.');
     }
+    return response.reasonPhrase ?? 'Request failed.';
   }
+
+  // Helper to handle general response logic
+  static dynamic _handleResponse(http.Response res, String operationName) {
+     debugPrint('[RoomService.$operationName] Response Status: ${res.statusCode}');
+     // Uncomment for detailed body logging:
+     // debugPrint('[RoomService.$operationName] Response Body: ${utf8.decode(res.bodyBytes, allowMalformed: true)}');
+
+     if (res.statusCode >= 200 && res.statusCode < 300) {
+        // Handle successful responses (200 OK, 201 Created, 204 No Content)
+        if (res.statusCode == 204 || res.bodyBytes.isEmpty) {
+           return null; // No content to parse
+        }
+        try {
+           return jsonDecode(utf8.decode(res.bodyBytes));
+        } catch (e) {
+           debugPrint('[RoomService.$operationName] Error decoding success response: $e');
+           throw RoomServiceException('Failed to process server response.', statusCode: res.statusCode);
+        }
+     } else {
+        // Handle error responses
+        final errorMessage = _parseErrorMessage(res);
+        debugPrint('[RoomService.$operationName] Error: $errorMessage');
+        throw RoomServiceException(errorMessage, statusCode: res.statusCode);
+     }
+  }
+
 
   // --- Room CRUD and Joining/Leaving ---
 
   // Create a new room
-  static Future<Room> createRoom(Room room) async {
+  static Future<Room> createRoom(Room roomData, {String? password}) async { // Pass password separately
     final uri = Uri.parse('$_baseUrl/rooms');
     final client = _client();
-    final requestBody = room.toCreateJson(); // Get JSON body from Room model
-
-    print('[RoomService.createRoom] Request URL: $uri');
-    print('[RoomService.createRoom] Request Body: ${jsonEncode(requestBody)}');
+    // Use toCreateJson with password
+    final requestBody = jsonEncode(roomData.toCreateJson(password: password));
+    const operation = 'createRoom';
+    debugPrint('[$operation] Request URL: $uri');
+    debugPrint('[$operation] Request Body: $requestBody');
 
     try {
       final res = await _requestWithTimeout(
         client.post(
           uri,
-          headers: await _headers(withAuth: true), // Requires auth
-          body: jsonEncode(requestBody),
+          headers: await _headers(), // Auth needed
+          body: requestBody,
         ),
       );
-
-      print('[RoomService.createRoom] Response Status: ${res.statusCode}');
-      print('[RoomService.createRoom] Response Body: ${res.body}');
-
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final body = jsonDecode(res.body);
-        return Room.fromJson(body); // Parse successful response
+      final body = _handleResponse(res, operation);
+      // Backend returns { message: string, room: RoomResponseDto }
+      if (body != null && body['room'] is Map<String, dynamic>) {
+         return Room.fromJson(body['room']); // Pass only the room object
+      } else {
+         throw RoomServiceException('Invalid response format after creating room.', statusCode: res.statusCode);
       }
-
-      // Handle specific known error messages from backend if possible
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
-    } on SocketException { // Handle network errors
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
-    } on TimeoutException { // Handle request timeout
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
+    } on SocketException {
+      throw RoomServiceException('Network connection failed.');
+    } on TimeoutException {
+      throw RoomServiceException('Request timed out.');
     } on RoomServiceException { // Re-throw specific service exceptions
       rethrow;
-    } catch (e) { // Handle other unexpected errors
-      print('[RoomService.createRoom] Error: $e');
-      throw RoomServiceException('방 생성 중 오류가 발생했습니다: ${e.toString()}');
-    } finally {
-      client.close(); // Close the client after the request
-    }
-  }
-
-  // Get a list of rooms (assuming an endpoint exists, add if needed)
-  static Future<List<Room>> getRooms() async {
-    final uri = Uri.parse('$_baseUrl/rooms');
-    final client = _client();
-    print('[RoomService.getRooms] Request URL: $uri');
-    try {
-      final res = await _requestWithTimeout(
-        client.get(uri, headers: await _headers(withAuth: true)), // Assuming auth needed
-      );
-      print('[RoomService.getRooms] Response Status: ${res.statusCode}');
-
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final List<dynamic> body = jsonDecode(res.body);
-        return body
-            .map((e) => Room.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
-    } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
-    } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
-    } on RoomServiceException {
-      rethrow;
     } catch (e) {
-       print('[RoomService.getRooms] Error: $e');
-      throw RoomServiceException('방 목록 조회 중 오류가 발생했습니다: ${e.toString()}');
+      debugPrint('[$operation] Unexpected Error: $e');
+      throw RoomServiceException('An unexpected error occurred while creating the room.');
     } finally {
       client.close();
     }
   }
 
-  // Get details for a specific room
+  // Get a list of rooms (Assuming GET /rooms returns List<RoomResponseDto>)
+  static Future<List<Room>> getRooms() async {
+    // Note: Backend doesn't currently have a GET /rooms endpoint. This is hypothetical.
+    final uri = Uri.parse('$_baseUrl/rooms'); // Adjust if endpoint exists
+    final client = _client();
+    const operation = 'getRooms';
+    debugPrint('[$operation] Request URL: $uri');
+    try {
+      final res = await _requestWithTimeout(client.get(uri, headers: await _headers())); // Auth assumed
+      final List<dynamic> body = _handleResponse(res, operation);
+      return body.map((e) => Room.fromJson(e as Map<String, dynamic>)).toList();
+    } on SocketException {
+      throw RoomServiceException('Network connection failed.');
+    } on TimeoutException {
+      throw RoomServiceException('Request timed out.');
+    } on RoomServiceException {
+      rethrow;
+    } catch (e) {
+       debugPrint('[$operation] Unexpected Error: $e');
+      throw RoomServiceException('An unexpected error occurred while fetching rooms.');
+    } finally {
+      client.close();
+    }
+  }
+
+  // Get details for a specific room (GET /rooms/:roomId)
   static Future<Room> getRoom(String roomId) async {
+    // Room ID is UUID string, no need to parse to int
     final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}');
     final client = _client();
-     print('[RoomService.getRoom] Request URL: $uri');
+    const operation = 'getRoom';
+    debugPrint('[$operation] Request URL: $uri');
     try {
-      final res = await _requestWithTimeout(
-        client.get(uri, headers: await _headers(withAuth: true)), // Assuming auth needed
-      );
-       print('[RoomService.getRoom] Response Status: ${res.statusCode}');
-
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final body = jsonDecode(res.body);
-        return Room.fromJson(body);
-      }
-       if (res.statusCode == 404) {
-         throw RoomServiceException('방을 찾을 수 없습니다.', statusCode: 404);
+      final res = await _requestWithTimeout(client.get(uri, headers: await _headers())); // Auth needed
+      final body = _handleResponse(res, operation);
+      // Backend returns RoomResponseDto directly
+      return Room.fromJson(body);
+    } on SocketException {
+      throw RoomServiceException('Network connection failed.');
+    } on TimeoutException {
+      throw RoomServiceException('Request timed out.');
+    } on RoomServiceException catch(e) {
+       // Make 404 error more specific if possible
+       if (e.statusCode == 404) {
+          throw RoomServiceException('Room not found.', statusCode: 404);
        }
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
-    } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
-    } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
-    } on RoomServiceException {
-      rethrow;
+       rethrow;
     } catch (e) {
-       print('[RoomService.getRoom] Error: $e');
-      throw RoomServiceException('방 정보 조회 중 오류가 발생했습니다: ${e.toString()}');
+      debugPrint('[$operation] Unexpected Error: $e');
+      throw RoomServiceException('An unexpected error occurred while fetching room details.');
     } finally {
       client.close();
     }
   }
 
-  // Join a room
+  // Join a room (POST /rooms/:roomId/join)
   static Future<Room> joinRoom(String roomId, {String? password}) async {
-    final uri = Uri.parse('$_baseUrl/rooms/$roomId/join');
+    final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/join');
     final client = _client();
-    print('[RoomService.joinRoom] Request URL: $uri');
+    final requestBody = jsonEncode({'password': password ?? ''}); // Send empty string if no password
+    const operation = 'joinRoom';
+    debugPrint('[$operation] Request URL: $uri');
+    debugPrint('[$operation] Request Body: $requestBody'); // Don't log password in production
 
     try {
       final res = await _requestWithTimeout(
-        client.post(
-          uri,
-          headers: await _headers(withAuth: true), // Requires auth
-          // Only include password if provided
-          body: jsonEncode({'password': password}),
-        ),
+        client.post(uri, headers: await _headers(), body: requestBody), // Auth needed
       );
-       print('[RoomService.joinRoom] Response Status: ${res.statusCode}');
-
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final body = jsonDecode(res.body);
-        return Room.fromJson(body);
+      final body = _handleResponse(res, operation);
+       // Backend returns { message: string, room: RoomResponseDto }
+      if (body != null && body['room'] is Map<String, dynamic>) {
+         return Room.fromJson(body['room']);
+      } else {
+         throw RoomServiceException('Invalid response format after joining room.', statusCode: res.statusCode);
       }
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
     } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
+      throw RoomServiceException('Network connection failed.');
     } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
+      throw RoomServiceException('Request timed out.');
     } on RoomServiceException {
       rethrow;
     } catch (e) {
-       print('[RoomService.joinRoom] Error: $e');
-      throw RoomServiceException('방 입장 중 오류가 발생했습니다: ${e.toString()}');
+      debugPrint('[$operation] Unexpected Error: $e');
+      throw RoomServiceException('An unexpected error occurred while joining the room.');
     } finally {
       client.close();
     }
   }
 
-  // Leave a room
+  // Leave a room (POST /rooms/:roomId/leave)
   static Future<void> leaveRoom(String roomId) async {
-    final uri = Uri.parse(
-      '$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/leave',
-    );
+    final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/leave');
     final client = _client();
-    print('[RoomService.leaveRoom] Request URL: $uri');
+    const operation = 'leaveRoom';
+    debugPrint('[$operation] Request URL: $uri');
     try {
-      final res = await _requestWithTimeout(
-        client.post(uri, headers: await _headers(withAuth: true)), // Requires auth
-      );
-      print('[RoomService.leaveRoom] Response Status: ${res.statusCode}');
-
-      // Backend might return 200 OK or 204 No Content on successful leave
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        return; // Success
-      }
-      // Handle specific 403 Forbidden error (creator cannot leave)
-      if (res.statusCode == 403) {
-        throw RoomServiceException('방장은 방을 나갈 수 없습니다.', statusCode: 403);
-      }
-
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
+      final res = await _requestWithTimeout(client.post(uri, headers: await _headers())); // Auth needed
+      _handleResponse(res, operation); // Expects 204 No Content
     } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
+      throw RoomServiceException('Network connection failed.');
     } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
-    } on RoomServiceException {
-      rethrow;
+      throw RoomServiceException('Request timed out.');
+    } on RoomServiceException catch(e) {
+       // Handle specific 403 Forbidden error
+       if (e.statusCode == 403) {
+          throw RoomServiceException('Creator cannot leave the room.', statusCode: 403);
+       }
+       rethrow;
     } catch (e) {
-       print('[RoomService.leaveRoom] Error: $e');
-      throw RoomServiceException('방 퇴장 중 오류가 발생했습니다: ${e.toString()}');
+      debugPrint('[$operation] Unexpected Error: $e');
+      throw RoomServiceException('An unexpected error occurred while leaving the room.');
     } finally {
       client.close();
     }
   }
 
-  // Delete a room (creator only)
+  // Delete a room (creator only) (DELETE /rooms/:roomId)
   static Future<void> deleteRoom(String roomId) async {
     final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}');
     final client = _client();
-     print('[RoomService.deleteRoom] Request URL: $uri');
+    const operation = 'deleteRoom';
+    debugPrint('[$operation] Request URL: $uri');
     try {
-      final res = await _requestWithTimeout(
-        client.delete(uri, headers: await _headers(withAuth: true)), // Requires auth
-      );
-      print('[RoomService.deleteRoom] Response Status: ${res.statusCode}');
-
-      // Expect 204 No Content for successful deletion
-      if (res.statusCode == 204 || (res.statusCode >= 200 && res.statusCode < 300)) { // Allow 200 OK as well
-        return; // Success
-      }
-       // Handle 403 Forbidden (not the creator)
-      if (res.statusCode == 403) {
-         throw RoomServiceException('방장만 방을 삭제할 수 있습니다.', statusCode: 403);
-      }
-
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
+      final res = await _requestWithTimeout(client.delete(uri, headers: await _headers())); // Auth needed
+      _handleResponse(res, operation); // Expects 204 No Content
     } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
+      throw RoomServiceException('Network connection failed.');
     } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
-    } on RoomServiceException {
+      throw RoomServiceException('Request timed out.');
+    } on RoomServiceException catch(e) {
+      // Handle 403 Forbidden (not the creator)
+      if (e.statusCode == 403) {
+         throw RoomServiceException('Only the room creator can delete the room.', statusCode: 403);
+      }
       rethrow;
     } catch (e) {
-       print('[RoomService.deleteRoom] Error: $e');
-      throw RoomServiceException('방 삭제 중 오류가 발생했습니다: ${e.toString()}');
+      debugPrint('[$operation] Unexpected Error: $e');
+      throw RoomServiceException('An unexpected error occurred while deleting the room.');
     } finally {
       client.close();
     }
   }
 
-  // Update room details (e.g., name, password)
-  static Future<Room> updateRoom(
-    String roomId,
-    Map<String, dynamic> updates, // Map containing fields to update
-  ) async {
-    final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}');
-    final client = _client();
-    print('[RoomService.updateRoom] Request URL: $uri');
-    print('[RoomService.updateRoom] Request Body: ${jsonEncode(updates)}');
-    try {
-      final res = await _requestWithTimeout(
-        client.patch( // Use PATCH for partial updates
-          uri,
-          headers: await _headers(withAuth: true), // Requires auth
-          body: jsonEncode(updates),
-        ),
-      );
-       print('[RoomService.updateRoom] Response Status: ${res.statusCode}');
-
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final body = jsonDecode(res.body) as Map<String, dynamic>;
-        return Room.fromJson(body); // Return updated room
-      }
-       if (res.statusCode == 403) {
-         throw RoomServiceException('방 정보 수정 권한이 없습니다.', statusCode: 403);
-       }
-       if (res.statusCode == 404) {
-         throw RoomServiceException('방을 찾을 수 없습니다.', statusCode: 404);
-       }
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
-    } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
-    } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
-    } on RoomServiceException {
-      rethrow;
-    } catch (e) {
-       print('[RoomService.updateRoom] Error: $e');
-      throw RoomServiceException('방 정보 업데이트 중 오류가 발생했습니다: ${e.toString()}');
-    } finally {
-      client.close();
-    }
-  }
+  // Update room details (PATCH /rooms/:roomId) - Backend endpoint doesn't exist yet
+  // static Future<Room> updateRoom( String roomId, Map<String, dynamic> updates) async { ... }
 
   // --- Participant Management ---
 
-  // Get list of participants in a room
+  // Get list of participants in a room (GET /rooms/:roomId/participants)
   static Future<List<Participant>> getParticipants(String roomId) async {
-    final uri = Uri.parse(
-      '$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/participants',
-    );
+    final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/participants');
     final client = _client();
-     print('[RoomService.getParticipants] Request URL: $uri');
+    const operation = 'getParticipants';
+    debugPrint('[$operation] Request URL: $uri');
     try {
-      final res = await _requestWithTimeout(
-        client.get(uri, headers: await _headers(withAuth: true)), // Assuming auth needed
-      );
-       print('[RoomService.getParticipants] Response Status: ${res.statusCode}');
-
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final List<dynamic> body = jsonDecode(res.body);
-        return body
-            .map((e) => Participant.fromJson(e as Map<String, dynamic>))
-            .toList();
-      } else if (res.statusCode == 404) {
-        throw RoomServiceException('해당 방을 찾을 수 없습니다.', statusCode: 404);
-      }
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
+      final res = await _requestWithTimeout(client.get(uri, headers: await _headers())); // Auth needed
+      // Backend returns List<RoomParticipantDto>
+      final List<dynamic> body = _handleResponse(res, operation);
+      // Ensure Participant.fromJson handles the backend DTO correctly (int IDs)
+      return body.map((e) => Participant.fromJson(e as Map<String, dynamic>)).toList();
     } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
+      throw RoomServiceException('Network connection failed.');
     } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
-    } on RoomServiceException {
-      rethrow;
+      throw RoomServiceException('Request timed out.');
+    } on RoomServiceException catch(e) {
+        if (e.statusCode == 404) {
+           throw RoomServiceException('Room not found when fetching participants.', statusCode: 404);
+        }
+        rethrow;
     } catch (e) {
-      print('[RoomService.getParticipants] Error: $e');
-      throw RoomServiceException('참여자 목록 조회 중 오류가 발생했습니다: ${e.toString()}');
+      debugPrint('[$operation] Unexpected Error: $e');
+      throw RoomServiceException('An unexpected error occurred while fetching participants.');
     } finally {
       client.close();
     }
   }
 
-  // Transfer creator role (creator only)
-  static Future<void> transferCreator(
-      String roomId, String newCreatorId) async {
-    final uri = Uri.parse(
-      '$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/transfer-creator',
-    );
+  // Transfer creator role (creator only) (PATCH /rooms/:roomId/transfer-creator)
+  // [수정됨] Accepts int newCreatorUserId
+  static Future<Room> transferCreator(String roomId, int newCreatorUserId) async {
+    final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/transfer-creator');
     final client = _client();
-    // Backend expects newCreatorId in the body
-    final body = jsonEncode({'newCreatorId': newCreatorId});
-    print('[RoomService.transferCreator] Request URL: $uri');
-    print('[RoomService.transferCreator] Request Body: $body');
+    // Backend expects { newCreatorId: number } in the body
+    final body = jsonEncode({'newCreatorId': newCreatorUserId});
+    const operation = 'transferCreator';
+    debugPrint('[$operation] Request URL: $uri');
+    debugPrint('[$operation] Request Body: $body');
 
     try {
       final res = await _requestWithTimeout(
-        client.patch(uri, headers: await _headers(withAuth: true), body: body), // Use PATCH
+        client.patch(uri, headers: await _headers(), body: body), // Auth needed
       );
-       print('[RoomService.transferCreator] Response Status: ${res.statusCode}');
-
-      // Expect 200 OK on success
-      if (res.statusCode == 200) {
-        return; // Success
-      }
+      // Backend returns { message: string, room: RoomResponseDto }
+      final responseBody = _handleResponse(res, operation);
+       if (responseBody != null && responseBody['room'] is Map<String, dynamic>) {
+          return Room.fromJson(responseBody['room']); // Return updated room
+       } else {
+          throw RoomServiceException('Invalid response format after transferring creator.', statusCode: res.statusCode);
+       }
+    } on SocketException {
+      throw RoomServiceException('Network connection failed.');
+    } on TimeoutException {
+      throw RoomServiceException('Request timed out.');
+    } on RoomServiceException catch(e) {
       // Handle specific errors
-      if (res.statusCode == 403) {
-         throw RoomServiceException('방장만 권한을 위임할 수 있습니다.', statusCode: 403);
+      if (e.statusCode == 403) {
+         throw RoomServiceException('Only the room creator can transfer ownership.', statusCode: 403);
       }
-      if (res.statusCode == 404) {
-         throw RoomServiceException('방 또는 대상 유저를 찾을 수 없습니다.', statusCode: 404);
-      }
-       if (res.statusCode == 400) { // e.g., newCreatorId is not a participant
-         final errorMessage = _parseErrorMessage(res.body);
-         throw RoomServiceException(errorMessage, statusCode: res.statusCode);
-      }
-
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
-    } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
-    } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
-    } on RoomServiceException {
+      // 400 or 404 errors might contain specific messages from backend
       rethrow;
     } catch (e) {
-       print('[RoomService.transferCreator] Error: $e');
-      throw RoomServiceException('방장 위임 중 오류가 발생했습니다: ${e.toString()}');
+      debugPrint('[$operation] Unexpected Error: $e');
+      throw RoomServiceException('An unexpected error occurred while transferring creator.');
     } finally {
       client.close();
     }
   }
 
-  // Update participant's role (creator only)
-  static Future<void> updateParticipantRole(
+  // Update participant's role (creator only) (PATCH /rooms/:roomId/participants/:userId/role)
+  // [수정됨] Accepts int participantId
+  static Future<Room> updateParticipantRole(
     String roomId,
-    String userId, // Target user ID
-    String newRole, // New role (e.g., "GM", "PLAYER")
+    int participantId, // <<< --- Changed to int
+    String newRole, // New role ("GM" or "PLAYER")
   ) async {
-    final uri = Uri.parse(
-      '$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/participants/${Uri.encodeComponent(userId)}/role',
-    );
+    // URL expects participantId (number in backend, converted to string here)
+    final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/participants/${participantId.toString()}/role');
     final client = _client();
-    final body = jsonEncode({'role': newRole});
-    print('[RoomService.updateParticipantRole] Request URL: $uri');
-    print('[RoomService.updateParticipantRole] Request Body: $body');
+    // Body expects { role: string }
+    final body = jsonEncode({'role': newRole.toUpperCase()}); // Ensure role is uppercase
+    const operation = 'updateParticipantRole';
+    debugPrint('[$operation] Request URL: $uri');
+    debugPrint('[$operation] Request Body: $body');
 
     try {
       final res = await _requestWithTimeout(
-        client.patch(uri, headers: await _headers(withAuth: true), body: body), // Use PATCH
+        client.patch(uri, headers: await _headers(), body: body), // Auth needed
       );
-       print('[RoomService.updateParticipantRole] Response Status: ${res.statusCode}');
-
-      if (res.statusCode == 200) {
-        return; // Success
-      }
-       if (res.statusCode == 403) {
-         throw RoomServiceException('역할 변경 권한이 없습니다.', statusCode: 403);
-      }
-       if (res.statusCode == 404) {
-         throw RoomServiceException('방 또는 대상 유저를 찾을 수 없습니다.', statusCode: 404);
-      }
-       if (res.statusCode == 400) { // e.g., Invalid role
-         final errorMessage = _parseErrorMessage(res.body);
-         throw RoomServiceException(errorMessage, statusCode: res.statusCode);
-      }
-
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
+      // Backend returns { message: string, room: RoomResponseDto }
+       final responseBody = _handleResponse(res, operation);
+       if (responseBody != null && responseBody['room'] is Map<String, dynamic>) {
+          return Room.fromJson(responseBody['room']); // Return updated room
+       } else {
+          throw RoomServiceException('Invalid response format after updating role.', statusCode: res.statusCode);
+       }
     } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
+      throw RoomServiceException('Network connection failed.');
     } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
-    } on RoomServiceException {
-      rethrow;
+      throw RoomServiceException('Request timed out.');
+    } on RoomServiceException catch(e) {
+       if (e.statusCode == 403) {
+         throw RoomServiceException('Only the room creator can change roles.', statusCode: 403);
+       }
+       // 400 (Invalid role/participant) or 404 errors handled by _handleResponse
+       rethrow;
     } catch (e) {
-      print('[RoomService.updateParticipantRole] Error: $e');
-      throw RoomServiceException('참여자 역할 변경 중 오류가 발생했습니다: ${e.toString()}');
+      debugPrint('[$operation] Unexpected Error: $e');
+      throw RoomServiceException('An unexpected error occurred while updating participant role.');
     } finally {
       client.close();
     }
   }
 
-  // Remove (kick) a participant from the room (creator or self)
-  // Corresponds to the backend's removeUser logic (soft delete)
-  static Future<void> removeUser(
-      String roomId,
-      String targetUserId, // ID of the user to be removed
-      // Requester ID is implicitly sent via Authorization token
-      ) async {
-    // Backend likely determines requester from token and checks permissions.
-    // Frontend just needs to send the targetUserId.
-    // Assuming a DELETE endpoint for removal, matching REST conventions.
-    final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/participants/${Uri.encodeComponent(targetUserId)}');
+  // Remove (kick) a participant - Backend endpoint MISSING
+  // If DELETE /rooms/:roomId/participants/:participantId is implemented:
+  /*
+  static Future<void> removeParticipant(String roomId, int targetParticipantId) async {
+    final uri = Uri.parse('$_baseUrl/rooms/${Uri.encodeComponent(roomId)}/participants/${targetParticipantId.toString()}');
     final client = _client();
-    print('[RoomService.removeUser] Request URL: $uri');
+    const operation = 'removeParticipant';
+    debugPrint('[$operation] Request URL: $uri');
 
     try {
       final res = await _requestWithTimeout(
-        client.delete(uri, headers: await _headers(withAuth: true)), // Requires auth
+        client.delete(uri, headers: await _headers()), // Auth needed
       );
-      print('[RoomService.removeUser] Response Status: ${res.statusCode}');
-
-      // Expect 200 OK or 204 No Content for successful removal (soft delete)
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        return; // Success
-      }
-       // Handle specific errors based on backend implementation
-      if (res.statusCode == 403) { // Forbidden
-         final errorMessage = _parseErrorMessage(res.body);
-         // Check specific message if backend provides it (e.g., creator cannot remove self)
-         if (errorMessage.contains('cannot remove creator')) { // Example check
-            throw RoomServiceException('방장은 자신을 추방할 수 없습니다.', statusCode: 403);
-         } else {
-             throw RoomServiceException('참여자를 추방할 권한이 없습니다.', statusCode: 403);
-         }
-      }
-      if (res.statusCode == 404) {
-         throw RoomServiceException('방 또는 대상 유저를 찾을 수 없습니다.', statusCode: 404);
-      }
-
-      final errorMessage = _parseErrorMessage(res.body);
-      throw RoomServiceException(errorMessage, statusCode: res.statusCode);
+      _handleResponse(res, operation); // Expect 204 No Content
     } on SocketException {
-      throw RoomServiceException('네트워크 연결을 확인해주세요.');
+      throw RoomServiceException('Network connection failed.');
     } on TimeoutException {
-      throw RoomServiceException('서버 응답 시간이 초과되었습니다.');
-    } on RoomServiceException {
-      rethrow;
+      throw RoomServiceException('Request timed out.');
+    } on RoomServiceException catch (e) {
+       if (e.statusCode == 403) {
+          throw RoomServiceException('Permission denied to remove participant.', statusCode: 403);
+       }
+       if (e.statusCode == 404) {
+          throw RoomServiceException('Room or participant not found.', statusCode: 404);
+       }
+       rethrow;
     } catch (e) {
-       print('[RoomService.removeUser] Error: $e');
-      throw RoomServiceException('참여자 추방 중 오류가 발생했습니다: ${e.toString()}');
+       debugPrint('[$operation] Unexpected Error: $e');
+       throw RoomServiceException('An unexpected error occurred while removing the participant.');
     } finally {
       client.close();
     }
   }
+  */
 
-
-  // --- Utility ---
-
-  // Close the shared client if needed (e.g., on app exit)
-  // Note: Standard http.Client might not need explicit closing for simple use cases.
-  // static void dispose() {
-  //   _sharedClient?.close();
-  //   _sharedClient = null;
-  // }
-}
+} // End of RoomService Class

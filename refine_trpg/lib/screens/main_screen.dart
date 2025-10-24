@@ -4,10 +4,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../routes.dart';
-import '../services/navigation_service.dart';
-import '../services/auth_service.dart';
-import '../services/auth_state_manager.dart';
+import 'package:refine_trpg/routes.dart';
+import 'package:refine_trpg/services/navigation_service.dart';
+import 'package:refine_trpg/services/auth_service.dart';
+import 'package:refine_trpg/services/auth_state_manager.dart';
 
 /// 앱의 메인 화면으로, 사용자의 로그인 상태에 따라 다른 UI를 보여줍니다.
 class MainScreen extends StatefulWidget {

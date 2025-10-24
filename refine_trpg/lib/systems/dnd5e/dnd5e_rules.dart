@@ -1,5 +1,5 @@
-import '../core/rules_engine.dart';
-import '../core/dice.dart';
+import 'package:refine_trpg/systems/core/rules_engine.dart';
+import 'package:refine_trpg/systems/core/dice.dart';
 
 class Dnd5eRules implements TrpgRules {
   @override

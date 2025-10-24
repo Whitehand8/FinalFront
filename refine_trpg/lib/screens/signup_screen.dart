@@ -3,8 +3,8 @@
 // =======================================================================
 
 import 'package:flutter/material.dart';
-import '../services/navigation_service.dart';
-import '../services/auth_service.dart';
+import 'package:refine_trpg/services/navigation_service.dart';
+import 'package:refine_trpg/services/auth_service.dart';
 
 /// 사용자 회원가입을 위한 화면 위젯입니다.
 class SignupScreen extends StatefulWidget {

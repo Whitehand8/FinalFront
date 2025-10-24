@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 // 수정된 모델 파일을 임포트
-import '../models/token.dart';
-import '../models/vtt_map.dart'; // VttScene 대신 VttMap 임포트
+import 'package:refine_trpg/models/token.dart';
+import 'package:refine_trpg/models/vtt_map.dart'; // VttScene 대신 VttMap 임포트
 import 'auth_service.dart'; // Import AuthService to get the token
 
 // --- 여기부터 ---

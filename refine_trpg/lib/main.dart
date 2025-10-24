@@ -4,18 +4,18 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import './routes.dart';
-import './services/navigation_service.dart';
-import './services/auth_state_manager.dart';
-import './services/settings_manager.dart';
-import './screens/main_screen.dart';
-import './screens/login_screen.dart';
-import './screens/signup_screen.dart';
-import './screens/find_room_screen.dart';
-import './screens/create_room_screen.dart';
-import './screens/option_screen.dart';
-import './screens/room_screen.dart';
-import './models/room.dart';
+import 'package:refine_trpg/routes.dart';
+import 'package:refine_trpg/services/navigation_service.dart';
+import 'package:refine_trpg/services/auth_state_manager.dart';
+import 'package:refine_trpg/services/settings_manager.dart';
+import 'package:refine_trpg/screens/main_screen.dart';
+import 'package:refine_trpg/screens/login_screen.dart';
+import 'package:refine_trpg/screens/signup_screen.dart';
+import 'package:refine_trpg/screens/find_room_screen.dart';
+import 'package:refine_trpg/screens/create_room_screen.dart';
+import 'package:refine_trpg/screens/option_screen.dart';
+import 'package:refine_trpg/screens/room_screen.dart';
+import 'package:refine_trpg/models/room.dart';
 
 /// 앱의 시작점입니다.
 void main() {

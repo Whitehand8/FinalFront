@@ -1,6 +1,6 @@
 // lib/models/token.dart (원래 Marker.dart)
 
-import 'package.flutter/foundation.dart'; // For debugPrint
+import 'package:flutter/foundation.dart'; // For debugPrint
 
 /// 백엔드의 Token 엔티티/DTO에 대응하는 모델
 class Token {
@@ -8,7 +8,8 @@ class Token {
   final String mapId; // VttMap ID (UUID)
 
   // 연결된 시트 또는 NPC (둘 중 하나만 값을 가짐)
-  final String? sheetId; // CharacterSheet ID (UUID)
+  // [수정됨] 백엔드(token.entity.ts)의 'characterSheetId: number?'와 일치
+  final int? characterSheetId;
   final int? npcId; // Npc ID (number)
 
   String name;
@@ -20,7 +21,7 @@ class Token {
   Token({
     required this.id,
     required this.mapId,
-    this.sheetId,
+    this.characterSheetId, // [수정됨]
     this.npcId,
     required this.name,
     required this.x,
@@ -70,7 +71,8 @@ class Token {
     return Token(
       id: id,
       mapId: mapId,
-      sheetId: j['sheetId'] as String?, // Nullable String (UUID)
+      // [수정됨] 'characterSheetId' 키에서 int? 타입으로 파싱
+      characterSheetId: _parseInt(j['characterSheetId']),
       npcId: _parseInt(j['npcId']), // Nullable int
       name: name,
       x: x,
@@ -87,7 +89,7 @@ class Token {
   Map<String, dynamic> toJson() => {
         'id': id,
         'mapId': mapId,
-        'sheetId': sheetId,
+        'characterSheetId': characterSheetId, // [수정됨]
         'npcId': npcId,
         'name': name,
         'x': x,
@@ -101,7 +103,7 @@ class Token {
   Token copyWith({
     String? id,
     String? mapId,
-    String? sheetId,
+    int? characterSheetId, // [수정됨]
     int? npcId,
     String? name,
     double? x,
@@ -113,8 +115,8 @@ class Token {
     return Token(
       id: id ?? this.id,
       mapId: mapId ?? this.mapId,
-      // ?.call()을 사용하여 명시적으로 null을 전달할 수 있도록 함
-      sheetId: sheetId ?? this.sheetId,
+      // [수정됨]
+      characterSheetId: characterSheetId ?? this.characterSheetId,
       npcId: npcId ?? this.npcId,
       name: name ?? this.name,
       x: x ?? this.x,

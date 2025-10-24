@@ -4,8 +4,8 @@ import 'dart:async'; // For TimeoutException
 import 'package:flutter/foundation.dart'; // For debugPrint
 import 'package:http/http.dart' as http;
 // 수정된 모델 파일을 임포트
-import '../models/vtt_scene.dart';
-import '../models/token.dart';
+import 'package:refine_trpg/models/vtt_map.dart';
+import 'package:refine_trpg/models/token.dart';
 import 'auth_service.dart'; // Import AuthService for token handling
 
 // Custom exception for VTT service errors
