@@ -290,8 +290,8 @@ class ChatService with ChangeNotifier {
       'messages': [
         {
           'content': content,
-          // 'sentAt': DateTime.now().toIso8601String(), // Optional: client-side timestamp if needed, backend usually handles this
-          // 'senderId': _currentUserId // Optional: backend infers senderId from authenticated socket
+          'sentAt': DateTime.now().toIso8601String(), // ✅ MODIFIED: Backend requires this
+          'senderId': _currentUserId, // ✅ MODIFIED: Backend requires this
         }
       ]
     };

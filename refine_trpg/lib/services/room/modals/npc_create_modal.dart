@@ -20,7 +20,13 @@ class _NpcCreateModalState extends State<NpcCreateModal> {
   final _formKey = GlobalKey<FormState>(); // 폼 유효성 검사를 위한 키
   String _name = ''; // 입력받을 NPC 이름
   String _description = ''; // 입력받을 NPC 설명
-  NpcType _type = NpcType.basic; // 선택된 NPC 타입 (기본값: basic)
+  
+  // ✅ MODIFIED: 기본값을 NpcType.basic에서 NpcType.NPC로 변경
+  NpcType _type = NpcType.NPC; 
+  
+  // ✅ NEW: isPublic 상태 추가 (백엔드 CreateNpcDto에 필요)
+  bool _isPublic = false; 
+
   bool _isLoading = false; // 생성 요청 중 로딩 상태 표시
 
   /// '생성' 버튼 클릭 시 실행될 함수
@@ -35,12 +41,14 @@ class _NpcCreateModalState extends State<NpcCreateModal> {
     // 3. 로딩 상태 시작
     setState(() => _isLoading = true);
 
-    // 4. Npc 객체 생성 (id는 null, data는 기본값 {})
+    // 4. Npc 객체 생성 ( ✅ MODIFIED: isPublic 필드 추가)
     final newNpc = Npc(
       name: _name,
       description: _description,
       type: _type,
       roomId: widget.roomId,
+      isPublic: _isPublic, // 백엔드 DTO에서 요구하는 값 전달
+      // data 필드는 npc.dart 모델에서 자동으로 {name, description} 등을 포함하여 생성됨
     );
 
     try {
@@ -104,7 +112,7 @@ class _NpcCreateModalState extends State<NpcCreateModal> {
                 items: NpcType.values
                     .map((type) => DropdownMenuItem(
                           value: type,
-                          // 화면에는 Enum 값을 문자열로 변환하여 표시
+                          // ✅ MODIFIED: 화면에는 Enum 값을 문자열(npc, monster)로 변환하여 표시
                           child: Text(npcTypeToString(type)),
                         ))
                     .toList(),
@@ -114,6 +122,20 @@ class _NpcCreateModalState extends State<NpcCreateModal> {
                     setState(() => _type = val);
                   }
                 },
+              ),
+              const SizedBox(height: 16), // 간격
+
+              // ✅ NEW: isPublic 체크박스 추가
+              CheckboxListTile(
+                title: const Text('플레이어에게 공개'),
+                value: _isPublic,
+                onChanged: (bool? value) {
+                  setState(() {
+                    _isPublic = value ?? false;
+                  });
+                },
+                controlAffinity: ListTileControlAffinity.leading, // 체크박스를 왼쪽에
+                contentPadding: EdgeInsets.zero, // 여백 제거
               ),
             ],
           ),
