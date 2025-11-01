@@ -1,9 +1,9 @@
 // lib/widgets/npc/npc_detail_modal.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:refine_trpg/models/npc.dart';
-import 'package:refine_trpg/models/enums/npc_type.dart';
-import 'package:refine_trpg/providers/npc_provider.dart';
+import 'package:trpg_frontend/models/npc.dart';
+import 'package:trpg_frontend/models/enums/npc_type.dart';
+import 'package:trpg_frontend/providers/npc_provider.dart';
 import 'dart:convert'; // JsonEncoder/Decoder
 
 class NpcDetailModal extends StatefulWidget {

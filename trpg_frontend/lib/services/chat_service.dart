@@ -3,19 +3,22 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:refine_trpg/models/chat.dart';
+import 'package:trpg_frontend/models/chat.dart'; // 기존 import 경로 유지
 import 'auth_service.dart';
 import 'Token_manager.dart';
 
 class ChatService with ChangeNotifier {
-  final String roomId;
+  // ✅ 1. String roomId를 int chatRoomId로 변경
+  final int chatRoomId; 
   IO.Socket? _socket;
   bool _isDisposed = false;
 
   final List<ChatMessage> _messages = [];
   List<ChatMessage> get messages => _messages;
 
-  ChatService(this.roomId) {
+  // ✅ 2. 생성자에서 int chatRoomId를 받도록 수정
+  ChatService(this.chatRoomId) {
+    debugPrint('[ChatService] 초기화 (ChatRoom ID: $chatRoomId)');
     _init();
   }
 
@@ -29,13 +32,13 @@ class ChatService with ChangeNotifier {
 
     final Token = await TokenManager.instance.getAccessToken();
     if (Token == null) {
-      debugPrint('WebSocket 연결 실패: 토큰 없음');
+      debugPrint('[ChatService] WebSocket 연결 실패: 토큰 없음');
       return;
     }
 
     // ⚠️ 포트 11123, 네임스페이스 /chat
     _socket = IO.io(
-      'http://localhost:11123/chat',
+      'http://localhost:11123/chat', // 백엔드 ChatGateway 포트 및 네임스페이스
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .enableForceNew()
@@ -48,45 +51,46 @@ class ChatService with ChangeNotifier {
     _socket!
       ..onConnect((_) {
         if (!_isDisposed) {
-          debugPrint('WebSocket 연결 성공');
+          debugPrint('[ChatService] WebSocket 연결 성공');
           _joinRoom();
         }
       })
       ..on('joinedRoom', (_) {
-        if (!_isDisposed) debugPrint('방 참여 성공: $roomId');
+        if (!_isDisposed) debugPrint('[ChatService] 방 참여 성공: $chatRoomId');
       })
       ..on('newMessage', (data) {
-        if (_isDisposed) return;
+        if (!_isDisposed) return;
         try {
           final msg = ChatMessage.fromJson(data as Map<String, dynamic>);
           _messages.add(msg);
           notifyListeners();
         } catch (e) {
-          debugPrint('newMessage 파싱 실패: $e');
+          debugPrint('[ChatService] newMessage 파싱 실패: $e');
         }
       })
       ..on('error', (data) {
         if (_isDisposed) return;
         final msg = (data as Map<String, dynamic>)['message'] as String?;
-        debugPrint('WebSocket 오류: $msg');
-        // 필요 시 UI에 SnackBar 등으로 표시
+        debugPrint('[ChatService] WebSocket 오류: $msg');
       })
       ..onDisconnect((_) {
-        if (!_isDisposed) debugPrint('WebSocket 연결 끊김');
+        if (!_isDisposed) debugPrint('[ChatService] WebSocket 연결 끊김');
       })
       ..onConnectError((err) {
-        if (!_isDisposed) debugPrint('WebSocket 연결 오류: $err');
+        if (!_isDisposed) debugPrint('[ChatService] WebSocket 연결 오류: $err');
       });
 
     _socket!.connect();
   }
 
   void _joinRoom() {
-    _socket?.emit('joinRoom', {'roomId': roomId});
+    // ✅ 3. 백엔드(chat.gateway.ts)가 기대하는 숫자 ID(int) 전송
+    _socket?.emit('joinRoom', {'roomId': chatRoomId});
   }
 
   Future<void> _fetchInitialLogs() async {
-    final uri = Uri.parse('http://localhost:11122/chat/rooms/$roomId/messages');
+    // ✅ 4. 백엔드(chat.controller.ts)가 기대하는 숫자 ID(int)를 URL에 사용
+    final uri = Uri.parse('http://localhost:11122/chat/rooms/$chatRoomId/messages');
     try {
       final Token = await TokenManager.instance.getAccessToken();
       final response = await http.get(
@@ -106,32 +110,36 @@ class ChatService with ChangeNotifier {
             try {
               _messages.add(ChatMessage.fromJson(item));
             } catch (e) {
-              debugPrint('로그 아이템 파싱 실패: $e');
+              debugPrint('[ChatService] 로그 아이템 파싱 실패: $e');
             }
           }
         }
         notifyListeners();
+      } else {
+         debugPrint('[ChatService] 채팅 로그 로딩 실패 (Status: ${response.statusCode}): ${response.body}');
       }
     } catch (e) {
-      if (!_isDisposed) debugPrint('채팅 로그 로딩 실패: $e');
+      if (!_isDisposed) debugPrint('[ChatService] 채팅 로그 로딩 중 네트워크 오류: $e');
     }
   }
 
   Future<void> sendMessage(String content) async {
     if (_isDisposed || _socket == null || !_socket!.connected) {
-      debugPrint('소켓이 연결되지 않아 메시지를 보낼 수 없습니다.');
+      debugPrint('[ChatService] 소켓이 연결되지 않아 메시지를 보낼 수 없습니다.');
       return;
     }
 
     final senderId = await AuthService.instance.getCurrentUserId();
     if (senderId == null) {
-      debugPrint('사용자 ID를 가져올 수 없습니다. 로그인이 필요합니다.');
+      debugPrint('[ChatService] 사용자 ID를 가져올 수 없습니다. 로그인이 필요합니다.');
       return;
     }
 
     final now = DateTime.now().toIso8601String();
+    
+    // ✅ 5. 백엔드(chat.gateway.ts)가 기대하는 숫자 ID(int) 전송
     final payload = {
-      'roomId': roomId,
+      'roomId': chatRoomId,
       'messages': [
         {
           'senderId': senderId,
@@ -145,6 +153,7 @@ class ChatService with ChangeNotifier {
 
   @override
   void dispose() {
+    debugPrint('[ChatService] 해제 (ChatRoom ID: $chatRoomId)');
     _isDisposed = true;
     _socket?.disconnect();
     _socket?.dispose();

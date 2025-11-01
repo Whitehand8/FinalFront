@@ -1,7 +1,7 @@
 // lib/providers/npc_provider.dart
 import 'package:flutter/foundation.dart';
-import 'package:refine_trpg/models/npc.dart';
-import 'package:refine_trpg/services/npc_service.dart'; // NpcService와 NpcServiceException import
+import 'package:trpg_frontend/models/npc.dart';
+import 'package:trpg_frontend/services/npc_service.dart'; // NpcService와 NpcServiceException import
 
 class NpcProvider with ChangeNotifier {
   final String _roomId;

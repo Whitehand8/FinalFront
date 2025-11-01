@@ -3,9 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import 'package:refine_trpg/models/token.dart';
-import 'package:refine_trpg/services/vtt_socket_service.dart';
-import 'package:refine_trpg/services/vtt_service.dart'; // [수정됨] REST API 서비스 import
+import 'package:trpg_frontend/models/token.dart';
+import 'package:trpg_frontend/services/vtt_socket_service.dart';
+import 'package:trpg_frontend/services/vtt_service.dart'; // [수정됨] REST API 서비스 import
 
 class VttCanvas extends StatelessWidget {
   const VttCanvas({super.key});

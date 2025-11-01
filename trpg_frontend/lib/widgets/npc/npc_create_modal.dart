@@ -3,9 +3,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:refine_trpg/models/npc.dart'; // Npc 모델 임포트
-import 'package:refine_trpg/models/enums/npc_type.dart'; // NpcType Enum 임포트
-import 'package:refine_trpg/providers/npc_provider.dart'; // NpcProvider 임포트
+import 'package:trpg_frontend/models/npc.dart'; // Npc 모델 임포트
+import 'package:trpg_frontend/models/enums/npc_type.dart'; // NpcType Enum 임포트
+import 'package:trpg_frontend/providers/npc_provider.dart'; // NpcProvider 임포트
 
 /// NPC 생성을 위한 모달 (AlertDialog) 위젯
 class NpcCreateModal extends StatefulWidget {

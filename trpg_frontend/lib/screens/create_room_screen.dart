@@ -2,9 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/room.dart';
-import '../router/routers.dart';
-import '../services/room_service.dart';
+import 'package:trpg_frontend/models/room.dart';
+import 'package:trpg_frontend/router/routers.dart';
+import 'package:trpg_frontend/services/room_service.dart';
 
 class CreateRoomScreen extends StatefulWidget {
   const CreateRoomScreen({super.key});

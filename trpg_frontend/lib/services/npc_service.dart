@@ -1,7 +1,7 @@
 // lib/services/npc_service.dart
 import 'package:dio/dio.dart'; // Dio import
 import 'package:flutter/foundation.dart';
-import 'package:refine_trpg/models/npc.dart';
+import 'package:trpg_frontend/models/npc.dart';
 import 'ApiClient.dart'; // ApiClient import
 
 // NpcServiceException 정의 (기존과 동일하거나 ApiClient의 에러 처리 활용)

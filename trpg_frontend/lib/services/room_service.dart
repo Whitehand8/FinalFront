@@ -1,7 +1,7 @@
 // lib/services/room_service.dart
 import 'package:dio/dio.dart';
-import 'package:refine_trpg/models/participant.dart';
-import 'package:refine_trpg/models/room.dart';
+import 'package:trpg_frontend/models/participant.dart';
+import 'package:trpg_frontend/models/room.dart';
 import 'ApiClient.dart';
 
 class RoomServiceException implements Exception {

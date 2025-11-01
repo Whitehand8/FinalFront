@@ -1,4 +1,4 @@
-package com.raughtale.trpg.refine_trpg
+package com.raughtale.trpg.trpg_frontend
 
 import io.flutter.embedding.android.FlutterActivity
 

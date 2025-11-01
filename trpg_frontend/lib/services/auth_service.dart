@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'ApiClient.dart';
 import 'Token_manager.dart';
-import 'package:refine_trpg/utils/jwt_utils.dart';
+import 'package:trpg_frontend/utils/jwt_utils.dart';
 import 'user_service.dart';
 
 class AuthService with ChangeNotifier {

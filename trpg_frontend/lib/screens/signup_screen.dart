@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../router/routers.dart';
-import '../services/user_service.dart';
+import 'package:trpg_frontend/router/routers.dart';
+import 'package:trpg_frontend/services/user_service.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});

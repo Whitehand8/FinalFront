@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../router/routers.dart';
+import 'package:trpg_frontend/router/routers.dart';
 
 /// 방 메뉴 화면 (로그인된 사용자 전용)
 class MenuScreen extends StatefulWidget {

@@ -29,7 +29,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     (GetSystemMetrics(SM_CYSCREEN) - 720) / 2
   );
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"refine_trpg", origin, size)) {
+  if (!window.Create(L"trpg_frontend", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

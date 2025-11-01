@@ -1,14 +1,14 @@
 // lib/routes/app_router.dart
 import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
-import 'package:refine_trpg/services/auth_service.dart';
-import '../screens/login_screen.dart';
-import '../screens/menu_screen.dart';
-import '../screens/signup_screen.dart';
-import '../screens/join_room_screen.dart';
-import '../screens/create_room_screen.dart';
-import '../screens/option_screen.dart';
-import '../screens/room_screen.dart';
+import 'package:trpg_frontend/services/auth_service.dart';
+import 'package:trpg_frontend/screens/login_screen.dart';
+import 'package:trpg_frontend/screens/menu_screen.dart';
+import 'package:trpg_frontend/screens/signup_screen.dart';
+import 'package:trpg_frontend/screens/join_room_screen.dart';
+import 'package:trpg_frontend/screens/create_room_screen.dart';
+import 'package:trpg_frontend/screens/option_screen.dart';
+import 'package:trpg_frontend/screens/room_screen.dart';
 import 'routers.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();

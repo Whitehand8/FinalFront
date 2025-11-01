@@ -1,9 +1,9 @@
 // lib/services/vtt_socket_service.dart
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:refine_trpg/models/token.dart';
-import 'package:refine_trpg/models/vtt_scene.dart';
-import 'package:refine_trpg/services/token_manager.dart'; // [수정됨] 인증 토큰 관리를 위해 필수
+import 'package:trpg_frontend/models/token.dart';
+import 'package:trpg_frontend/models/vtt_scene.dart';
+import 'package:trpg_frontend/services/token_manager.dart'; // [수정됨] 인증 토큰 관리를 위해 필수
 
 class VttSocketService with ChangeNotifier {
   // [수정됨] 백엔드 포트는 11122가 아닐 수 있음. ApiClient.dart의 baseUrl을 따르는 것이 좋음.

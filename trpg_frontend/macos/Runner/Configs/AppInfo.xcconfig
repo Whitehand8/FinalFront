@@ -5,7 +5,7 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = refine_trpg
+PRODUCT_NAME = trpg_frontend
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = com.raughtale.trpg.refineTrpg

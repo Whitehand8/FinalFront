@@ -1,6 +1,6 @@
 {
-    "name": "refine_trpg",
-    "short_name": "refine_trpg",
+    "name": "trpg_frontend",
+    "short_name": "trpg_frontend",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

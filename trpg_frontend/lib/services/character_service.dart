@@ -1,6 +1,6 @@
 // services/character_service.dart
 import 'package:dio/dio.dart';
-import 'package:refine_trpg/models/character.dart';
+import 'package:trpg_frontend/models/character.dart';
 import 'ApiClient.dart';
 import 'room_service.dart';
 

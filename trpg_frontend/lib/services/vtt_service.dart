@@ -1,7 +1,7 @@
 // lib/services/vtt_service.dart
 import 'package:dio/dio.dart';
-import 'package:refine_trpg/models/token.dart'; // VTT 토큰 모델
-import 'package:refine_trpg/models/vtt_scene.dart'; // VTT 맵(씬) 모델
+import 'package:trpg_frontend/models/token.dart'; // VTT 토큰 모델
+import 'package:trpg_frontend/models/vtt_scene.dart'; // VTT 맵(씬) 모델
 import 'ApiClient.dart'; // Dio 클라이언트
 
 /// VTT (맵, 토큰) 관련 REST API 서비스

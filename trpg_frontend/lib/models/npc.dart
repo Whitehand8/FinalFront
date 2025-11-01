@@ -1,6 +1,6 @@
 // lib/models/npc.dart
 import 'package:flutter/foundation.dart'; // For debugPrint
-import 'package:refine_trpg/models/enums/npc_type.dart'; // NpcType enum 임포트
+import 'package:trpg_frontend/models/enums/npc_type.dart'; // NpcType enum 임포트
 
 class Npc {
   /// NPC 고유 ID (PK)

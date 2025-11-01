@@ -2,8 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../router/routers.dart';
-import '../services/room_service.dart';
+import 'package:trpg_frontend/router/routers.dart';
+import 'package:trpg_frontend/services/room_service.dart';
 
 class JoinRoomScreen extends StatefulWidget {
   const JoinRoomScreen({super.key});

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:refine_trpg/router/app_router.dart';
-import 'package:refine_trpg/services/settings_manager.dart';
+import 'package:trpg_frontend/router/app_router.dart';
+import 'package:trpg_frontend/services/settings_manager.dart';
 import 'router/routers.dart';
 import 'services/ApiClient.dart';
 import 'services/auth_service.dart';

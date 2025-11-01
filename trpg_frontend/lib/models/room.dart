@@ -1,8 +1,8 @@
-// models/room.dart
+// lib/models/room.dart
 import 'participant.dart';
 
 class Room {
-  final String? id;
+  final String? id; // TRPG Room UUID
   final String name;
   final String? password;
   final int maxParticipants;
@@ -10,6 +10,7 @@ class Room {
   final List<Participant> participants;
   final int? creatorId;
   final String system;
+  final int? chatRoomId; // ✅ 1. 채팅방 ID (숫자) 필드 추가
 
   Room({
     this.id,
@@ -20,6 +21,7 @@ class Room {
     this.participants = const [],
     this.creatorId,
     required this.system,
+    this.chatRoomId, // ✅ 2. 생성자에 추가
   });
 
   Map<String, dynamic> toCreateJson() {
@@ -39,6 +41,7 @@ class Room {
   }
 
   factory Room.fromJson(Map<String, dynamic> json) {
+    // 백엔드 응답이 { message: '...', room: {...} } 형태일 수 있으므로 data 키 확인
     final data = json['room'] is Map<String, dynamic> ? json['room'] : json;
 
     final participants = (data['participants'] as List<dynamic>?)
@@ -47,7 +50,7 @@ class Room {
         [];
 
     return Room(
-      id: data['id']?.toString(),
+      id: data['id']?.toString(), // TRPG Room UUID
       name: data['name'] as String? ?? 'no_name',
       password: data['password'] as String?,
       maxParticipants: data['maxParticipants'] as int? ?? 0,
@@ -55,6 +58,7 @@ class Room {
       participants: participants,
       creatorId: data['creatorId'] as int?,
       system: data['system'] as String? ?? 'coc7e',
+      chatRoomId: data['chatRoomId'] as int?, // ✅ 3. JSON에서 chatRoomId 파싱
     );
   }
 
@@ -71,9 +75,10 @@ class Room {
     String? password,
     int? maxParticipants,
     int? currentParticipants,
-    List<Participant>? participants, // ✅ 타입 일치
+    List<Participant>? participants,
     int? creatorId,
     String? system,
+    int? chatRoomId, // ✅ 4. copyWith에 추가
   }) {
     return Room(
       id: id ?? this.id,
@@ -84,6 +89,7 @@ class Room {
       participants: participants ?? this.participants,
       creatorId: creatorId ?? this.creatorId,
       system: system ?? this.system,
+      chatRoomId: chatRoomId ?? this.chatRoomId, // ✅ 5. copyWith에 추가
     );
   }
 }

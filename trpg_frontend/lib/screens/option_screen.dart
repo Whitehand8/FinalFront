@@ -2,10 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../router/routers.dart';
-import '../services/auth_service.dart';
-import '../services/settings_manager.dart';
-import '../services/user_service.dart';
+import 'package:trpg_frontend/router/routers.dart';
+import 'package:trpg_frontend/services/auth_service.dart';
+import 'package:trpg_frontend/services/settings_manager.dart';
+import 'package:trpg_frontend/services/user_service.dart';
 
 /// 앱의 다양한 설정 옵션을 관리하는 화면입니다.
 class OptionsScreen extends StatelessWidget {

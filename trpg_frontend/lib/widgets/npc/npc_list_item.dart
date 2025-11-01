@@ -1,8 +1,8 @@
 // lib/widgets/npc/npc_list_item.dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart'; // For network images
-import 'package:refine_trpg/models/npc.dart';
-import 'package:refine_trpg/models/enums/npc_type.dart'; // Import NpcType enum helper functions
+import 'package:trpg_frontend/models/npc.dart';
+import 'package:trpg_frontend/models/enums/npc_type.dart'; // Import NpcType enum helper functions
 
 /// Represents a single NPC item in a list.
 class NpcListItem extends StatelessWidget {
